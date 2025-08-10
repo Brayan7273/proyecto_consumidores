@@ -1,4 +1,4 @@
-from flask import render_template, request, redirect, send_file, url_for, flash, send_from_directory
+from flask import jsonify, render_template, request, redirect, send_file, url_for, flash, send_from_directory
 from werkzeug.utils import secure_filename
 from datetime import datetime
 import os
@@ -356,21 +356,25 @@ def entrenar_modelo(df):
     
     return model_path
 
+
 @app.route('/modelos')
 def modelos():
-    modelos = []
+    modelos_info = []
     for model_path in get_model_files():
         model_data = joblib.load(model_path)
-        modelos.append({
+        modelos_info.append({
             'nombre': os.path.basename(model_path),
+            'tipo_consumidor': 'General',  # O actualízalo si tu modelo es específico
+            'precision': model_data.get('accuracy', 'N/A'),
             'fecha': model_data['training_date'],
+            'metricas': model_data.get('report', {}),
             'ruta': model_path
         })
     
     # Ordenar por fecha (más reciente primero)
-    modelos.sort(key=lambda x: x['fecha'], reverse=True)
+    modelos_info.sort(key=lambda x: x['fecha'], reverse=True)
     
-    return render_template('modelos.html', modelos=modelos)
+    return render_template('modelos.html', modelos=modelos_info)
 
 @app.route('/predecir', methods=['GET', 'POST'])
 def predecir():
@@ -453,3 +457,26 @@ def eliminar_modelo(modelname):
         flash(f'Error al eliminar el modelo: {str(e)}', 'danger')
     
     return redirect(url_for('modelos'))
+
+@app.route('/metricas_modelo/<nombre>')
+def metricas_modelo(nombre):
+    model_path = os.path.join(MODEL_FOLDER, nombre)
+    if not os.path.exists(model_path):
+        return jsonify({"error": "Modelo no encontrado"}), 404
+    
+    model_data = joblib.load(model_path)
+    return jsonify({
+        'nombre': nombre,
+        'precision': model_data.get('accuracy', 0),
+        'fecha': model_data['training_date'],
+        'metricas': model_data.get('report', {})
+    })
+
+@app.route('/seleccionar_modelo/<nombre>', methods=['POST'])
+def seleccionar_modelo(nombre):
+    session['modelo_seleccionado'] = nombre  # Usa Flask-Session
+    return jsonify({
+        'status': 'success',
+        'modelo': nombre,
+        'message': 'Modelo seleccionado para predicciones'
+    })

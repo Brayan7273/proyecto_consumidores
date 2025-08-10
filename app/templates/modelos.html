@@ -1,0 +1,375 @@
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Modelos Generados</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
+    <style>
+        .badge-accuracy {
+            font-size: 0.9em;
+            padding: 0.35em 0.65em;
+        }
+        .model-actions {
+            white-space: nowrap;
+        }
+        .progress {
+            height: 20px;
+            width: 100px;
+            margin-top: 5px;
+        }
+        .progress-bar {
+            background-color: #4CAF50;
+        }
+        pre {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container mt-4">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1><i class="bi bi-robot"></i> Modelos Disponibles</h1>
+            <a href="/" class="btn btn-outline-secondary">
+                <i class="bi bi-arrow-left"></i> Volver al inicio
+            </a>
+        </div>
+
+        <div class="card shadow-sm mb-4">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">
+                        <i class="bi bi-info-circle"></i> Resumen de Modelos
+                    </h5>
+                    <span class="badge bg-primary">
+                        Total: {{ modelos|length }} modelo(s)
+                    </span>
+                </div>
+                <hr>
+                <div class="row">
+                    <div class="col-md-4">
+                        <div class="d-flex align-items-center">
+                            <i class="bi bi-check-circle-fill text-success fs-4 me-2"></i>
+                            <div>
+                                <h6 class="mb-0">Mejor precisión</h6>
+                                <span class="text-muted">
+                                    {% if modelos %}
+                                        {{ (modelos|max(attribute='precision')).precision|round(2) }}%
+                                    {% else %}
+                                        N/A
+                                    {% endif %}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="d-flex align-items-center">
+                            <i class="bi bi-calendar-event-fill text-info fs-4 me-2"></i>
+                            <div>
+                                <h6 class="mb-0">Modelo más reciente</h6>
+                                <span class="text-muted">
+                                    {% if modelos %}
+                                        {{ modelos[0].fecha }}
+                                    {% else %}
+                                        N/A
+                                    {% endif %}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="d-flex align-items-center">
+                            <i class="bi bi-collection-fill text-warning fs-4 me-2"></i>
+                            <div>
+                                <h6 class="mb-0">Tipos disponibles</h6>
+                                <span class="text-muted">
+                                    {% set tipos = modelos|map(attribute='tipo_consumidor')|unique|list %}
+                                    {{ tipos|join(', ') if tipos else 'General' }}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead class="table-light">
+                            <tr>
+                                <th><i class="bi bi-tag"></i> Nombre</th>
+                                <th><i class="bi bi-person-badge"></i> Tipo</th>
+                                <th><i class="bi bi-speedometer2"></i> Precisión</th>
+                                <th><i class="bi bi-calendar"></i> Fecha</th>
+                                <th><i class="bi bi-activity"></i> Métricas</th>
+                                <th class="text-end">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for modelo in modelos %}
+                            <tr>
+                                <td>
+                                    <strong>{{ modelo.nombre }}</strong>
+                                    {% if session.get('modelo_seleccionado') == modelo.nombre %}
+                                        <span class="badge bg-success ms-2">Seleccionado</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <span class="badge bg-info text-dark">
+                                        {{ modelo.tipo_consumidor }}
+                                    </span>
+                                </td>
+                                <td>
+                                    <div class="d-flex align-items-center">
+                                        <div class="progress me-2">
+                                            <div class="progress-bar" role="progressbar" 
+                                                 style="width: {{ modelo.precision * 100 }}%" 
+                                                 aria-valuenow="{{ modelo.precision * 100 }}" 
+                                                 aria-valuemin="0" 
+                                                 aria-valuemax="100">
+                                            </div>
+                                        </div>
+                                        <span>{{ (modelo.precision * 100)|round(2) }}%</span>
+                                    </div>
+                                </td>
+                                <td>{{ modelo.fecha }}</td>
+                                <td>
+                                    <button class="btn btn-sm btn-outline-primary" 
+                                            onclick="verMetricas('{{ modelo.nombre }}')">
+                                        <i class="bi bi-graph-up"></i> Ver
+                                    </button>
+                                </td>
+                                <td class="model-actions text-end">
+                                    <div class="btn-group" role="group">
+                                        <button class="btn btn-sm btn-success" 
+                                                onclick="seleccionarModelo('{{ modelo.nombre }}')"
+                                                {% if session.get('modelo_seleccionado') == modelo.nombre %}disabled{% endif %}>
+                                            <i class="bi bi-check-circle"></i> Usar
+                                        </button>
+                                        <a href="/descargar_modelo/{{ modelo.nombre }}" 
+                                           class="btn btn-sm btn-outline-secondary">
+                                            <i class="bi bi-download"></i>
+                                        </a>
+                                        <button class="btn btn-sm btn-outline-danger" 
+                                                onclick="confirmarEliminacion('{{ modelo.nombre }}')">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr>
+                                <td colspan="6" class="text-center text-muted py-4">
+                                    <i class="bi bi-exclamation-triangle fs-1"></i>
+                                    <h5 class="mt-2">No hay modelos disponibles</h5>
+                                    <p class="mb-0">Entrena un modelo para comenzar</p>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal para métricas -->
+    <div class="modal fade" id="metricasModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header bg-light">
+                    <h5 class="modal-title">
+                        <i class="bi bi-graph-up"></i> Detalles del Modelo
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body" id="metricasDetalle">
+                    <div class="text-center py-4">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Cargando...</span>
+                        </div>
+                        <p class="mt-2">Cargando métricas del modelo...</p>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        <i class="bi bi-x-circle"></i> Cerrar
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de confirmación -->
+    <div class="modal fade" id="confirmModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header bg-warning text-dark">
+                    <h5 class="modal-title">
+                        <i class="bi bi-exclamation-triangle"></i> Confirmar acción
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p>¿Estás seguro que deseas eliminar este modelo? Esta acción no se puede deshacer.</p>
+                    <p class="fw-bold" id="modeloAEliminar"></p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        <i class="bi bi-x-circle"></i> Cancelar
+                    </button>
+                    <button type="button" class="btn btn-danger" id="confirmDeleteBtn">
+                        <i class="bi bi-trash"></i> Eliminar
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Función para ver métricas detalladas
+        function verMetricas(nombre) {
+            const modal = new bootstrap.Modal(document.getElementById('metricasModal'));
+            const detalle = document.getElementById('metricasDetalle');
+            
+            detalle.innerHTML = `
+                <div class="text-center py-4">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Cargando...</span>
+                    </div>
+                    <p class="mt-2">Cargando métricas del modelo...</p>
+                </div>
+            `;
+            
+            modal.show();
+            
+            fetch(`/metricas_modelo/${encodeURIComponent(nombre)}`)
+                .then(response => response.json())
+                .then(data => {
+                    let html = `
+                        <div class="row">
+                            <div class="col-md-6">
+                                <h5><i class="bi bi-info-circle"></i> Información Básica</h5>
+                                <ul class="list-group list-group-flush mb-3">
+                                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                                        <span>Nombre:</span>
+                                        <span class="fw-bold">${data.nombre}</span>
+                                    </li>
+                                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                                        <span>Tipo de consumidor:</span>
+                                        <span class="badge bg-info text-dark">${data.tipo_consumidor}</span>
+                                    </li>
+                                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                                        <span>Precisión global:</span>
+                                        <span class="badge bg-success">${(data.precision * 100).toFixed(2)}%</span>
+                                    </li>
+                                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                                        <span>Fecha de creación:</span>
+                                        <span>${data.fecha}</span>
+                                    </li>
+                                </ul>
+                            </div>
+                            <div class="col-md-6">
+                                <h5><i class="bi bi-bar-chart"></i> Resumen de Métricas</h5>
+                                <div class="card">
+                                    <div class="card-body">
+                                        <pre class="mb-0">${JSON.stringify(data.metricas, null, 2)}</pre>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    detalle.innerHTML = html;
+                })
+                .catch(error => {
+                    detalle.innerHTML = `
+                        <div class="alert alert-danger">
+                            <i class="bi bi-exclamation-triangle"></i> Error al cargar las métricas: ${error}
+                        </div>
+                    `;
+                });
+        }
+
+        // Función para seleccionar modelo
+        function seleccionarModelo(nombre) {
+            fetch(`/seleccionar_modelo/${encodeURIComponent(nombre)}`, { 
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if(data.status === 'success') {
+                    // Mostrar notificación
+                    const toastHTML = `
+                        <div class="toast align-items-center text-white bg-success border-0 show" role="alert" aria-live="assertive" aria-atomic="true">
+                            <div class="d-flex">
+                                <div class="toast-body">
+                                    <i class="bi bi-check-circle-fill me-2"></i>
+                                    ${data.message}
+                                </div>
+                                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+                            </div>
+                        </div>
+                    `;
+                    
+                    const toastContainer = document.createElement('div');
+                    toastContainer.innerHTML = toastHTML;
+                    toastContainer.style.position = 'fixed';
+                    toastContainer.style.top = '20px';
+                    toastContainer.style.right = '20px';
+                    toastContainer.style.zIndex = '9999';
+                    document.body.appendChild(toastContainer);
+                    
+                    // Eliminar después de 3 segundos
+                    setTimeout(() => {
+                        toastContainer.remove();
+                        location.reload(); // Recargar para actualizar el estado
+                    }, 3000);
+                } else {
+                    alert(`Error: ${data.message || 'No se pudo seleccionar el modelo'}`);
+                }
+            })
+            .catch(error => {
+                alert(`Error al seleccionar el modelo: ${error}`);
+            });
+        }
+
+        // Funciones para eliminar modelo
+        let modeloActualAEliminar = null;
+        
+        function confirmarEliminacion(nombre) {
+            modeloActualAEliminar = nombre;
+            document.getElementById('modeloAEliminar').textContent = nombre;
+            const modal = new bootstrap.Modal(document.getElementById('confirmModal'));
+            modal.show();
+        }
+        
+        document.getElementById('confirmDeleteBtn').addEventListener('click', function() {
+            if(modeloActualAEliminar) {
+                fetch(`/eliminar_modelo/${encodeURIComponent(modeloActualAEliminar)}`, {
+                    method: 'POST'
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if(data.status === 'success') {
+                        location.reload();
+                    } else {
+                        alert(`Error: ${data.message || 'No se pudo eliminar el modelo'}`);
+                    }
+                })
+                .catch(error => {
+                    alert(`Error al eliminar el modelo: ${error}`);
+                });
+            }
+        });
+    </script>
+</body>
+</html>
