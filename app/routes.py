@@ -378,67 +378,66 @@ def modelos():
 
 @app.route('/predecir', methods=['GET', 'POST'])
 def predecir():
-    modelos_disponibles = get_model_files()
-    
+    modelos = get_model_files()
+    resultados = None
     if request.method == 'POST':
-        # Verificar si se seleccionó un modelo
-        if 'modelo' not in request.form or not request.form['modelo']:
-            flash('Debe seleccionar un modelo', 'danger')
+        if 'archivo' not in request.files or 'modelo' not in request.form:
+            flash("Debe seleccionar un archivo y un modelo", "danger")
             return redirect(request.url)
-        
-        # Verificar si se envió un archivo
-        if 'archivo' not in request.files:
-            flash('No se seleccionó ningún archivo', 'danger')
-            return redirect(request.url)
-        
+
         file = request.files['archivo']
-        
+        modelo_nombre = request.form['modelo']
+
         if file.filename == '':
-            flash('No se seleccionó ningún archivo', 'danger')
+            flash("No se seleccionó archivo", "danger")
             return redirect(request.url)
-        
-        if file and allowed_file(file.filename):
-            try:
-                # Guardar archivo temporalmente
-                filename = secure_filename(file.filename)
-                filepath = os.path.join(UPLOAD_FOLDER, filename)
-                file.save(filepath)
-                
-                # Leer datos a predecir
-                if filename.endswith('.csv'):
-                    df = pd.read_csv(filepath)
-                else:
-                    df = pd.read_excel(filepath)
-                
-                # Cargar modelo
-                model_path = request.form['modelo']
-                model_data = joblib.load(model_path)
-                modelo = model_data['model']
-                encoder = model_data['encoder']
-                
-                # Verificar que tenga las columnas necesarias
-                required_columns = model_data['features']
-                if not all(col in df.columns for col in required_columns):
-                    flash('El archivo no tiene la estructura requerida por el modelo', 'danger')
-                    return redirect(request.url)
-                
-                # Hacer predicciones
-                X = df[required_columns]
-                predicciones = modelo.predict(X)
-                df['Prediccion'] = encoder.inverse_transform(predicciones)
-                
-                # Guardar resultados
-                result_filename = f"resultados_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-                result_path = os.path.join(OUTPUT_FOLDER, result_filename)
-                df.to_excel(result_path, index=False)
-                
-                flash('Predicciones generadas exitosamente', 'success')
-                return redirect(url_for('descargar', filename=result_filename))
-                
-            except Exception as e:
-                flash(f'Error al procesar el archivo: {str(e)}', 'danger')
-    
-    return render_template('predecir.html', modelos=modelos_disponibles)
+
+        if not allowed_file(file.filename):
+            flash("Archivo no permitido", "danger")
+            return redirect(request.url)
+
+        try:
+            filename = secure_filename(file.filename)
+            filepath = os.path.join(UPLOAD_FOLDER, filename)
+            file.save(filepath)
+
+            # Leer datos según extensión
+            if filename.endswith('.csv'):
+                df = pd.read_csv(filepath)
+            else:
+                df = pd.read_excel(filepath)
+
+            # Cargar modelo
+            model_path = os.path.join(MODEL_FOLDER, modelo_nombre)
+            model_data = joblib.load(model_path)
+            modelo = model_data['model']
+            encoder = model_data['encoder']
+            features = model_data['features']
+
+            # Validar columnas
+            if not all(col in df.columns for col in features):
+                flash("El archivo no tiene las columnas requeridas por el modelo", "danger")
+                return redirect(request.url)
+
+            X = df[features]
+            predicciones = modelo.predict(X)
+            df['Prediccion'] = encoder.inverse_transform(predicciones)
+
+            # Guardar resultados
+            output_filename = f"resultados_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+            output_path = os.path.join(OUTPUT_FOLDER, output_filename)
+            df.to_excel(output_path, index=False)
+
+            resultados = df.head(10).to_dict(orient='records')
+            flash("Predicción realizada con éxito", "success")
+            return render_template('predecir.html', modelos=modelos, resultados=resultados, archivo=output_filename)
+
+        except Exception as e:
+            flash(f"Error: {str(e)}", "danger")
+            return redirect(request.url)
+
+    return render_template('predecir.html', modelos=modelos, resultados=resultados)
+
 
 @app.route('/descargar/<filename>')
 def descargar(filename):

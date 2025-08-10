@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>Clasificación de Consumidores</h2>
+
+    <form method="POST" enctype="multipart/form-data">
+        <div class="mb-3">
+            <label for="archivo" class="form-label">Carga tu archivo de datos (CSV o Excel)</label>
+            <input class="form-control" type="file" id="archivo" name="archivo" required>
+        </div>
+        <div class="mb-3">
+            <label for="modelo" class="form-label">Selecciona un modelo entrenado</label>
+            <select class="form-select" id="modelo" name="modelo" required>
+                <option value="">-- Seleccionar --</option>
+                {% for m in modelos %}
+                <option value="{{ m }}">{{ m }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <button type="submit" class="btn btn-primary">Predecir</button>
+    </form>
+
+    {% if resultados %}
+    <hr>
+    <h4>Resultados (primeros 10 registros):</h4>
+    <table class="table table-striped">
+        <thead>
+            <tr>
+                {% for col in resultados[0].keys() %}
+                <th>{{ col }}</th>
+                {% endfor %}
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in resultados %}
+            <tr>
+                {% for col in row.values() %}
+                <td>{{ col }}</td>
+                {% endfor %}
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    <a href="{{ url_for('descargar', filename=archivo) }}" class="btn btn-success">Descargar Resultados</a>
+    {% endif %}
+</div>
+{% endblock %}
