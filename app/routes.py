@@ -1,0 +1,455 @@
+from flask import render_template, request, redirect, send_file, url_for, flash, send_from_directory
+from werkzeug.utils import secure_filename
+from datetime import datetime
+import os
+import pandas as pd
+import joblib
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.preprocessing import LabelEncoder
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report, accuracy_score
+import glob
+import io
+from matplotlib import pyplot as plt
+from fpdf import FPDF
+import tempfile
+from app import app
+
+# Configuración de rutas
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+UPLOAD_FOLDER = os.path.join(BASE_DIR, 'app', 'data', 'uploads')
+MODEL_FOLDER = os.path.join(BASE_DIR, 'app', 'data', 'models')
+OUTPUT_FOLDER = os.path.join(BASE_DIR, 'app', 'data', 'outputs')
+
+# Crear carpetas si no existen
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(MODEL_FOLDER, exist_ok=True)
+os.makedirs(OUTPUT_FOLDER, exist_ok=True)
+
+# Asignar a Flask
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+app.config['MODEL_FOLDER'] = MODEL_FOLDER
+app.config['OUTPUT_FOLDER'] = OUTPUT_FOLDER
+
+# Extensiones permitidas
+ALLOWED_EXTENSIONS = {'xlsx', 'xls', 'csv'}
+
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+def get_model_files():
+    return glob.glob(os.path.join(MODEL_FOLDER, 'modelo_*.pkl'))
+
+def validate_dataframe(df):
+    """Valida la estructura del DataFrame"""
+    required_cols = [f'P{i}' for i in range(1, 21)] + ['Tipo_Consumidor']
+    if df.empty:
+        return False, "El archivo está vacío"
+    if not all(col in df.columns for col in required_cols):
+        missing = [col for col in required_cols if col not in df.columns]
+        return False, f"Faltan columnas requeridas: {', '.join(missing)}"
+    return True, ""
+
+@app.route('/')
+def index():
+    return render_template('index.html', now=datetime.now())
+
+@app.route('/entrenar', methods=['GET', 'POST'])
+def entrenar():
+    datos_df = None  # Mantenemos el DataFrame original
+    datos_template = None  # Datos preparados para el template
+    modelo_info = None
+    
+    if request.method == 'POST':
+        if 'archivo' not in request.files:
+            flash('No se seleccionó ningún archivo', 'danger')
+            return redirect(url_for('entrenar'))
+        
+        file = request.files['archivo']
+        if file.filename == '':
+            flash('No se seleccionó ningún archivo', 'danger')
+            return redirect(url_for('entrenar'))
+        
+        try:
+            # Guardar archivo
+            filename = secure_filename(file.filename)
+            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            file.save(filepath)
+            
+            # Leer y validar datos
+            if filename.endswith('.csv'):
+                df = pd.read_csv(filepath)
+            else:
+                df = pd.read_excel(filepath)
+            
+            # Validación de estructura
+            required_cols = [f'P{i}' for i in range(1, 21)] + ['Tipo_Consumidor']
+            missing_cols = [col for col in required_cols if col not in df.columns]
+            
+            if missing_cols:
+                flash(f'Faltan columnas requeridas: {", ".join(missing_cols)}', 'danger')
+                return redirect(url_for('entrenar'))
+            
+            if df.empty:
+                flash('El archivo está vacío', 'danger')
+                return redirect(url_for('entrenar'))
+            
+            # Procesamiento
+            X = df[[f'P{i}' for i in range(1, 21)]]
+            y = df['Tipo_Consumidor']
+            
+            le = LabelEncoder()
+            y_encoded = le.fit_transform(y)
+            
+            # Entrenamiento
+            X_train, X_test, y_train, y_test = train_test_split(
+                X, y_encoded, test_size=0.2, random_state=42
+            )
+            
+            modelo = RandomForestClassifier(
+                n_estimators=150,
+                max_depth=12,
+                min_samples_split=5,
+                class_weight='balanced',
+                random_state=42
+            )
+            modelo.fit(X_train, y_train)
+            
+            # Evaluación
+            y_pred = modelo.predict(X_test)
+            accuracy = accuracy_score(y_test, y_pred)
+            report = classification_report(y_test, y_pred, output_dict=True)
+            
+            # Guardar modelo
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            model_filename = f"modelo_{timestamp}.pkl"
+            model_path = os.path.join(MODEL_FOLDER, model_filename)
+            
+            joblib.dump({
+                'model': modelo,
+                'encoder': le,
+                'training_date': timestamp,
+                'features': [f'P{i}' for i in range(1, 21)],
+                'accuracy': accuracy,
+                'report': report
+            }, model_path)
+            
+            # Preparar datos para template
+            datos_df = df  # Guardamos el DataFrame completo
+            datos_template = {
+                'columnas': df.columns.tolist(),
+                'filas': df.head(10).to_dict('records'),
+                'total_registros': len(df)
+            }
+            
+            modelo_info = {
+                'algoritmo': 'Random Forest',
+                'accuracy': accuracy,
+                'fecha': timestamp,
+                'tamanio': os.path.getsize(model_path)/(1024*1024),  # MB
+                'metricas': report,
+                'distribucion': df['Tipo_Consumidor'].value_counts().to_dict()
+            }
+            
+            flash('Modelo entrenado exitosamente!', 'success')
+            
+        except Exception as e:
+            flash(f'Error al procesar el archivo: {str(e)}', 'danger')
+    
+    return render_template(
+        'entrenar.html',
+        datos=datos_template,
+        modelo_info=modelo_info,
+        datos_df=datos_df  # Pasamos el DataFrame por si acaso
+    )
+
+
+@app.route('/descargar_datos')
+def descargar_datos():
+    try:
+        files = glob.glob(os.path.join(UPLOAD_FOLDER, '*'))
+        if not files:
+            flash('No hay archivos para descargar', 'warning')
+            return redirect(url_for('entrenar'))
+            
+        latest_file = max(files, key=os.path.getctime)
+        df = pd.read_excel(latest_file)
+        
+        output = io.BytesIO()
+        df.to_csv(output, index=False)
+        output.seek(0)
+        
+        return send_file(
+            output,
+            mimetype='text/csv',
+            as_attachment=True,
+            download_name='datos_consumidores.csv'
+        )
+    except Exception as e:
+        flash(f'Error al descargar datos: {str(e)}', 'danger')
+        return redirect(url_for('entrenar'))
+
+@app.route('/descargar_modelo')
+def descargar_modelo():
+    try:
+        models = get_model_files()
+        if not models:
+            flash('No hay modelos entrenados', 'warning')
+            return redirect(url_for('entrenar'))
+            
+        latest_model = max(models, key=os.path.getctime)
+        return send_from_directory(
+            MODEL_FOLDER,
+            os.path.basename(latest_model),
+            as_attachment=True
+        )
+    except Exception as e:
+        flash(f'Error al descargar modelo: {str(e)}', 'danger')
+        return redirect(url_for('entrenar'))
+
+@app.route('/generar_reporte/<formato>')
+def generar_reporte(formato):
+    try:
+        # Obtener modelo
+        models = get_model_files()
+        if not models:
+            flash('No hay modelos entrenados', 'warning')
+            return redirect(url_for('entrenar'))
+            
+        latest_model = max(models, key=os.path.getctime)
+        model_data = joblib.load(latest_model)
+        
+        # Obtener datos
+        files = glob.glob(os.path.join(UPLOAD_FOLDER, '*'))
+        if not files:
+            flash('No hay archivos de datos', 'warning')
+            return redirect(url_for('entrenar'))
+            
+        latest_file = max(files, key=os.path.getctime)
+        df = pd.read_excel(latest_file)
+        
+        if formato == 'pdf':
+            pdf = FPDF()
+            pdf.add_page()
+            pdf.set_font("Arial", size=12)
+            
+            # Cabecera
+            pdf.cell(200, 10, txt="Reporte de Entrenamiento", ln=1, align='C')
+            pdf.ln(10)
+            
+            # Información del modelo
+            pdf.set_font("Arial", 'B', 12)
+            pdf.cell(200, 10, txt="Información del Modelo", ln=1)
+            pdf.set_font("Arial", size=10)
+            pdf.cell(200, 10, txt=f"Algoritmo: Random Forest", ln=1)
+            pdf.cell(200, 10, txt=f"Precisión: {float(model_data['accuracy']):.2%}", ln=1)
+            pdf.cell(200, 10, txt=f"Fecha: {model_data['training_date']}", ln=1)
+            pdf.ln(10)
+            
+            # Gráfico
+            distribucion = df['Tipo_Consumidor'].value_counts()
+            plt.figure(figsize=(6,6))
+            plt.pie(distribucion, labels=distribucion.index, autopct='%1.1f%%')
+            plt.title('Distribución de Tipos')
+            
+            temp_img = tempfile.NamedTemporaryFile(suffix='.png', delete=False)
+            plt.savefig(temp_img.name)
+            plt.close()
+            
+            pdf.image(temp_img.name, x=50, w=110)
+            os.unlink(temp_img.name)
+            pdf.ln(80)
+            
+            # Métricas
+            pdf.set_font("Arial", 'B', 12)
+            pdf.cell(200, 10, txt="Métricas por Tipo", ln=1)
+            
+            for tipo, metricas in model_data['report'].items():
+                if isinstance(metricas, dict):
+                    pdf.set_font("Arial", 'B', 10)
+                    pdf.cell(200, 10, txt=f"Tipo: {tipo}", ln=1)
+                    pdf.set_font("Arial", size=10)
+                    for k, v in metricas.items():
+                        if isinstance(v, (int, float)):
+                            pdf.cell(200, 10, txt=f"{k}: {v:.2f}", ln=1)
+                    pdf.ln(5)
+            
+            # Generar PDF
+            pdf_output = io.BytesIO()
+            pdf.output(pdf_output)
+            pdf_output.seek(0)
+            
+            return send_file(
+                pdf_output,
+                mimetype='application/pdf',
+                as_attachment=True,
+                download_name='reporte_entrenamiento.pdf'
+            )
+            
+        elif formato == 'excel':
+            output = io.BytesIO()
+            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                # Datos
+                df.to_excel(writer, sheet_name='Datos', index=False)
+                
+                # Métricas
+                metric_data = []
+                for tipo, vals in model_data['report'].items():
+                    if isinstance(vals, dict):
+                        row = {'Tipo': tipo}
+                        row.update({k: v for k, v in vals.items() if isinstance(v, (int, float))})
+                        metric_data.append(row)
+                
+                pd.DataFrame(metric_data).to_excel(writer, sheet_name='Métricas', index=False)
+                
+                # Resumen
+                summary = pd.DataFrame({
+                    'Métrica': ['Algoritmo', 'Precisión', 'Fecha'],
+                    'Valor': ['Random Forest', model_data['accuracy'], model_data['training_date']]
+                })
+                summary.to_excel(writer, sheet_name='Resumen', index=False)
+            
+            output.seek(0)
+            return send_file(
+                output,
+                mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                as_attachment=True,
+                download_name='reporte_entrenamiento.xlsx'
+            )
+            
+    except Exception as e:
+        flash(f'Error al generar reporte: {str(e)}', 'danger')
+        return redirect(url_for('entrenar'))
+
+# ... (resto de las rutas se mantienen igual) ...
+def entrenar_modelo(df):
+    # Preparar datos
+    preguntas = [f'P{i}' for i in range(1, 21)]
+    X = df[preguntas]
+    y = df['Tipo_Consumidor']
+    
+    # Codificar etiquetas
+    le = LabelEncoder()
+    y_encoded = le.fit_transform(y)
+    
+    # Entrenar modelo
+    modelo = RandomForestClassifier(
+        n_estimators=150,
+        max_depth=12,
+        min_samples_split=5,
+        class_weight='balanced',
+        random_state=42
+    )
+    modelo.fit(X, y_encoded)
+    
+    # Guardar modelo
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    model_filename = f"modelo_{timestamp}.pkl"
+    model_path = os.path.join(MODEL_FOLDER, model_filename)
+    
+    joblib.dump({
+        'model': modelo,
+        'encoder': le,
+        'training_date': timestamp,
+        'features': preguntas
+    }, model_path)
+    
+    return model_path
+
+@app.route('/modelos')
+def modelos():
+    modelos = []
+    for model_path in get_model_files():
+        model_data = joblib.load(model_path)
+        modelos.append({
+            'nombre': os.path.basename(model_path),
+            'fecha': model_data['training_date'],
+            'ruta': model_path
+        })
+    
+    # Ordenar por fecha (más reciente primero)
+    modelos.sort(key=lambda x: x['fecha'], reverse=True)
+    
+    return render_template('modelos.html', modelos=modelos)
+
+@app.route('/predecir', methods=['GET', 'POST'])
+def predecir():
+    modelos_disponibles = get_model_files()
+    
+    if request.method == 'POST':
+        # Verificar si se seleccionó un modelo
+        if 'modelo' not in request.form or not request.form['modelo']:
+            flash('Debe seleccionar un modelo', 'danger')
+            return redirect(request.url)
+        
+        # Verificar si se envió un archivo
+        if 'archivo' not in request.files:
+            flash('No se seleccionó ningún archivo', 'danger')
+            return redirect(request.url)
+        
+        file = request.files['archivo']
+        
+        if file.filename == '':
+            flash('No se seleccionó ningún archivo', 'danger')
+            return redirect(request.url)
+        
+        if file and allowed_file(file.filename):
+            try:
+                # Guardar archivo temporalmente
+                filename = secure_filename(file.filename)
+                filepath = os.path.join(UPLOAD_FOLDER, filename)
+                file.save(filepath)
+                
+                # Leer datos a predecir
+                if filename.endswith('.csv'):
+                    df = pd.read_csv(filepath)
+                else:
+                    df = pd.read_excel(filepath)
+                
+                # Cargar modelo
+                model_path = request.form['modelo']
+                model_data = joblib.load(model_path)
+                modelo = model_data['model']
+                encoder = model_data['encoder']
+                
+                # Verificar que tenga las columnas necesarias
+                required_columns = model_data['features']
+                if not all(col in df.columns for col in required_columns):
+                    flash('El archivo no tiene la estructura requerida por el modelo', 'danger')
+                    return redirect(request.url)
+                
+                # Hacer predicciones
+                X = df[required_columns]
+                predicciones = modelo.predict(X)
+                df['Prediccion'] = encoder.inverse_transform(predicciones)
+                
+                # Guardar resultados
+                result_filename = f"resultados_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+                result_path = os.path.join(OUTPUT_FOLDER, result_filename)
+                df.to_excel(result_path, index=False)
+                
+                flash('Predicciones generadas exitosamente', 'success')
+                return redirect(url_for('descargar', filename=result_filename))
+                
+            except Exception as e:
+                flash(f'Error al procesar el archivo: {str(e)}', 'danger')
+    
+    return render_template('predecir.html', modelos=modelos_disponibles)
+
+@app.route('/descargar/<filename>')
+def descargar(filename):
+    return send_from_directory(OUTPUT_FOLDER, filename, as_attachment=True)
+
+@app.route('/eliminar_modelo/<modelname>')
+def eliminar_modelo(modelname):
+    try:
+        model_path = os.path.join(MODEL_FOLDER, modelname)
+        if os.path.exists(model_path):
+            os.remove(model_path)
+            flash(f'Modelo {modelname} eliminado correctamente', 'success')
+        else:
+            flash('El modelo no existe', 'danger')
+    except Exception as e:
+        flash(f'Error al eliminar el modelo: {str(e)}', 'danger')
+    
+    return redirect(url_for('modelos'))

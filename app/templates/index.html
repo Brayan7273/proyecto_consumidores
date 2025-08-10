@@ -1,0 +1,240 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid px-0">
+    <!-- Hero Section with Gradient -->
+    <div class="hero-gradient py-5">
+        <div class="container py-4">
+            <div class="row justify-content-center">
+                <div class="col-lg-8 text-center">
+                    <div class="hero-icon mb-4">
+                        <i class="bi bi-people-fill"></i>
+                    </div>
+                    <h1 class="display-4 fw-bold text-white mb-3">Clasificador Psicográfico</h1>
+                    <p class="lead text-light mb-4">
+                        Descubre los patrones ocultos del comportamiento del consumidor
+                    </p>
+                    <div class="d-flex gap-3 justify-content-center">
+                        <a href="{{ url_for('entrenar') }}" class="btn btn-light btn-lg px-4 rounded-pill shadow">
+                            <i class="bi bi-robot me-2"></i>Entrenar Modelo
+                        </a>
+                        <a href="{{ url_for('predecir') }}" class="btn btn-outline-light btn-lg px-4 rounded-pill">
+                            <i class="bi bi-magic me-2"></i>Clasificar Datos
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Features Section -->
+    <div class="container py-5">
+        <div class="row g-4">
+            <!-- Teoría Psicográfica -->
+            <div class="col-lg-6">
+                <div class="card h-100 border-0 shadow-lg rounded-4">
+                    <div class="card-header bg-transparent border-0 py-4">
+                        <h2 class="h3 mb-0 text-center">
+                            <i class="bi bi-lightbulb-fill text-warning me-2"></i>
+                            Fundamentos Teóricos
+                        </h2>
+                    </div>
+                    <div class="card-body">
+                        <div class="p-4">
+                            <h3 class="h5 mb-3">Segmentación Psicográfica</h3>
+                            <p class="mb-4">
+                                Nuestro sistema utiliza el modelo <strong>AIO (Actividades, Intereses, Opiniones)</strong> 
+                                para clasificar consumidores según sus patrones psicológicos y de comportamiento.
+                            </p>
+                            
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <div class="feature-card bg-blue">
+                                        <div class="feature-icon">
+                                            <i class="bi bi-piggy-bank"></i>
+                                        </div>
+                                        <h4 class="h6 mb-2">Ahorro/Conservador</h4>
+                                        <p class="small mb-0">Prioriza seguridad financiera y consumo responsable</p>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="feature-card bg-green">
+                                        <div class="feature-icon">
+                                            <i class="bi bi-clipboard-data"></i>
+                                        </div>
+                                        <h4 class="h6 mb-2">Planificador/Analítico</h4>
+                                        <p class="small mb-0">Decisiones basadas en análisis y lógica</p>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="feature-card bg-orange">
+                                        <div class="feature-icon">
+                                            <i class="bi bi-lightning-charge"></i>
+                                        </div>
+                                        <h4 class="h6 mb-2">Impulsivo/Explorador</h4>
+                                        <p class="small mb-0">Motivado por emociones y novedad</p>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="feature-card bg-purple">
+                                        <div class="feature-icon">
+                                            <i class="bi bi-award"></i>
+                                        </div>
+                                        <h4 class="h6 mb-2">Leal a Marca/Status</h4>
+                                        <p class="small mb-0">Valora prestigio y consistencia</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- How it Works -->
+            <div class="col-lg-6">
+                <div class="card h-100 border-0 shadow-lg rounded-4">
+                    <div class="card-header bg-transparent border-0 py-4">
+                        <h2 class="h3 mb-0 text-center">
+                            <i class="bi bi-gear-fill text-primary me-2"></i>
+                            ¿Cómo funciona?
+                        </h2>
+                    </div>
+                    <div class="card-body">
+                        <div class="p-4">
+                            <div class="process-steps">
+                                <div class="step">
+                                    <div class="step-number">1</div>
+                                    <div class="step-content">
+                                        <h4 class="h6 mb-2">Carga tus datos</h4>
+                                        <p class="small text-muted mb-0">
+                                            Sube un archivo Excel con las respuestas de los consumidores (P1-P20)
+                                        </p>
+                                    </div>
+                                </div>
+                                <div class="step">
+                                    <div class="step-number">2</div>
+                                    <div class="step-content">
+                                        <h4 class="h6 mb-2">Procesamiento automático</h4>
+                                        <p class="small text-muted mb-0">
+                                            Nuestros algoritmos analizan los patrones psicográficos
+                                        </p>
+                                    </div>
+                                </div>
+                                <div class="step">
+                                    <div class="step-number">3</div>
+                                    <div class="step-content">
+                                        <h4 class="h6 mb-2">Resultados detallados</h4>
+                                        <p class="small text-muted mb-0">
+                                            Recibe reportes completos con los perfiles identificados
+                                        </p>
+                                    </div>
+                                </div>
+                                <div class="step">
+                                    <div class="step-number">4</div>
+                                    <div class="step-content">
+                                        <h4 class="h6 mb-2">Clasificación continua</h4>
+                                        <p class="small text-muted mb-0">
+                                            Usa modelos entrenados para predecir nuevos consumidores
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="text-center mt-5">
+                                <a href="{{ url_for('entrenar') }}" class="btn btn-primary btn-lg rounded-pill px-5 me-3">
+                                    <i class="bi bi-upload me-2"></i>Empezar Ahora
+                                </a>
+                                <a href="#teoria" class="btn btn-outline-primary btn-lg rounded-pill px-4">
+                                    <i class="bi bi-book me-2"></i>Saber Más
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+</div>
+
+<style>
+    /* Custom Styles */
+    .hero-gradient {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+    
+    .hero-icon {
+        font-size: 3.5rem;
+        color: rgba(255,255,255,0.2);
+    }
+    
+    .feature-card {
+        padding: 1.5rem;
+        border-radius: 1rem;
+        color: white;
+        height: 100%;
+        transition: transform 0.3s;
+    }
+    
+    .feature-card:hover {
+        transform: translateY(-5px);
+    }
+    
+    .feature-icon {
+        font-size: 2rem;
+        margin-bottom: 1rem;
+        opacity: 0.8;
+    }
+    
+    .bg-blue { background: linear-gradient(135deg, #6a11cb 0%, #2575fc 100%); }
+    .bg-green { background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); }
+    .bg-orange { background: linear-gradient(135deg, #f46b45 0%, #eea849 100%); }
+    .bg-purple { background: linear-gradient(135deg, #4776E6 0%, #8E54E9 100%); }
+    
+    .process-steps {
+        position: relative;
+        padding-left: 2rem;
+    }
+    
+    .process-steps:before {
+        content: "";
+        position: absolute;
+        left: 1.25rem;
+        top: 0;
+        bottom: 0;
+        width: 2px;
+        background: linear-gradient(to bottom, #667eea, #764ba2);
+    }
+    
+    .step {
+        position: relative;
+        padding-bottom: 2rem;
+    }
+    
+    .step-number {
+        position: absolute;
+        left: -2rem;
+        top: 0;
+        width: 2.5rem;
+        height: 2.5rem;
+        background: #667eea;
+        color: white;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: bold;
+        border: 3px solid white;
+    }
+    
+    .step-content {
+        padding-left: 1.5rem;
+    }
+    
+    .tech-badges .badge {
+        border-radius: 50rem;
+        font-weight: 500;
+    }
+</style>
+{% endblock %}

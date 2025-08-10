@@ -1,0 +1,245 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-lg-12">
+            <!-- Card de Entrenamiento -->
+            <div class="card shadow-lg mb-4">
+                <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                    <h2 class="h4 mb-0"><i class="bi bi-robot me-2"></i>Entrenamiento de Modelo</h2>
+                    <a href="{{ url_for('index') }}" class="btn btn-outline-light btn-sm">
+                        <i class="bi bi-arrow-left"></i> Volver
+                    </a>
+                </div>
+                
+                <div class="card-body">
+                    <form method="POST" action="{{ url_for('entrenar') }}" enctype="multipart/form-data" class="mb-4">
+                        <div class="row g-3 align-items-end">
+                            <div class="col-md-9">
+                                <label for="archivo" class="form-label">Seleccione archivo de datos:</label>
+                                <input class="form-control" type="file" id="archivo" name="archivo" accept=".xlsx,.xls,.csv" required>
+                                <div class="form-text">Archivo con columnas P1-P20 y Tipo_Consumidor</div>
+                            </div>
+                            <div class="col-md-3">
+                                <button type="submit" class="btn btn-success w-100 py-3">
+                                    <i class="bi bi-gear-fill me-2"></i> Entrenar
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+                    
+                    {% with messages = get_flashed_messages(with_categories=true) %}
+                        {% if messages %}
+                            {% for category, message in messages %}
+                                <div class="alert alert-{{ category }}">
+                                    {{ message }}
+                                </div>
+                            {% endfor %}
+                        {% endif %}
+                    {% endwith %}
+                </div>
+            </div>
+
+            <!-- Sección de Resultados -->
+            {% if datos or modelo_info %}
+            <div class="row">
+                <!-- Datos Subidos -->
+                <div class="col-lg-6 mb-4">
+                    <div class="card h-100 shadow-sm">
+                        <div class="card-header bg-info text-white">
+                            <h3 class="h5 mb-0"><i class="bi bi-table me-2"></i>Datos Subidos</h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="table-responsive" style="max-height: 400px;">
+                                <table class="table table-striped table-hover table-sm">
+                                    <thead class="sticky-top bg-light">
+                                        <tr>
+                                            {% for col in datos.columnas %}
+                                            <th>{{ col }}</th>
+                                            {% endfor %}
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for fila in datos.filas %}
+                                        <tr>
+                                            {% for col in datos.columnas %}
+                                            <td>{{ fila[col] }}</td>
+                                            {% endfor %}
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div class="mt-3">
+                                <span class="badge bg-secondary">Mostrando 10 de {{ datos.total_registros }} registros</span>
+                                <a href="{{ url_for('descargar_datos') }}" class="btn btn-sm btn-outline-info float-end">
+                                    <i class="bi bi-download me-1"></i> Descargar CSV
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Información del Modelo -->
+                <div class="col-lg-6 mb-4">
+                    <div class="card h-100 shadow-sm">
+                        <div class="card-header bg-purple text-white">
+                            <h3 class="h5 mb-0"><i class="bi bi-diagram-3 me-2"></i>Modelo Generado</h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <div class="p-3 bg-light rounded-3">
+                                        <h4 class="h6 mb-2">Algoritmo</h4>
+                                        <p class="mb-0">{{ modelo_info.algoritmo }}</p>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="p-3 bg-light rounded-3">
+                                        <h4 class="h6 mb-2">Precisión</h4>
+                                        <p class="mb-0">{{ "%.2f"|format(modelo_info.accuracy * 100) }}%</p>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="p-3 bg-light rounded-3">
+                                        <h4 class="h6 mb-2">Fecha</h4>
+                                        <p class="mb-0">{{ modelo_info.fecha }}</p>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="p-3 bg-light rounded-3">
+                                        <h4 class="h6 mb-2">Tamaño</h4>
+                                        <p class="mb-0">{{ "%.2f"|format(modelo_info.tamanio) }} MB</p>
+                                    </div>
+                                </div>
+                                 <!-- Métricas -->
+                                <div class="col-md-6">
+                                    <h4 class="h6 mb-3">Métricas del Modelo</h4>
+                                    <div class="table-responsive">
+                                        <table class="table table-sm">
+                                            <thead>
+                                                <tr>
+                                                    <th>Tipo</th>
+                                                    <th>Precisión</th>
+                                                    <th>Recall</th>
+                                                    <th>F1-Score</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {% for tipo, metrics in modelo_info.metricas.items() %}
+                                                    {% if tipo not in ['accuracy', 'macro avg', 'weighted avg'] %}
+                                                    <tr>
+                                                        <td>{{ tipo }}</td>
+                                                        <td>{{ "%.2f"|format(metrics.precision) }}</td>
+                                                        <td>{{ "%.2f"|format(metrics.recall) }}</td>
+                                                        <td>{{ "%.2f"|format(metrics['f1-score']) }}</td>
+                                                    </tr>
+                                                    {% endif %}
+                                                {% endfor %}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="mt-3">
+                                <a href="{{ url_for('descargar_modelo') }}" class="btn btn-sm btn-outline-purple me-2">
+                                    <i class="bi bi-download me-1"></i> Descargar Modelo
+                                </a>
+                                <a href="{{ url_for('predecir') }}" class="btn btn-sm btn-purple">
+                                    <i class="bi bi-magic me-1"></i> Usar para Clasificar
+                                </a>
+                            </div>
+                            
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Estadísticas -->
+                <div class="col-12 mb-4">
+                    <div class="card shadow-sm">
+                        <div class="card-header bg-success text-white">
+                            <h3 class="h5 mb-0"><i class="bi bi-bar-chart me-2"></i>Estadísticas</h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <!-- Gráfico de Distribución -->
+                                <div class="col-md-6">
+                                    <h4 class="h6 mb-3">Distribución de Tipos</h4>
+                                    <div class="chart-container" style="height: 250px;">
+                                        <canvas id="distribucionChart"></canvas>
+                                    </div>
+                                </div>
+                                
+                               
+                            </div>
+                            
+                            <div class="mt-4 d-flex justify-content-between">
+                                <a href="{{ url_for('generar_reporte', formato='pdf') }}" class="btn btn-danger">
+                                    <i class="bi bi-file-earmark-pdf me-1"></i> Descargar PDF
+                                </a>
+                                <a href="{{ url_for('generar_reporte', formato='excel') }}" class="btn btn-success">
+                                    <i class="bi bi-file-earmark-excel me-1"></i> Descargar Excel
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Scripts para gráficos -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    {% if modelo_info and modelo_info.distribucion %}
+    // Gráfico de distribución
+    const distribucionCtx = document.getElementById('distribucionChart').getContext('2d');
+    new Chart(distribucionCtx, {
+        type: 'doughnut',
+        data: {
+            labels: {{ modelo_info.distribucion.keys()|list|tojson }},
+            datasets: [{
+                data: {{ modelo_info.distribucion.values()|list|tojson }},
+                backgroundColor: [
+                    '#4e73df', '#1cc88a', '#36b9cc', '#f6c23e',
+                    '#e74a3b', '#fd7e14', '#20c997', '#6610f2'
+                ],
+                hoverBorderColor: "rgba(234, 236, 244, 1)",
+            }]
+        },
+        options: {
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'right'
+                }
+            }
+        }
+    });
+    {% endif %}
+</script>
+
+<style>
+    .bg-purple {
+        background-color: #6f42c1;
+    }
+    .btn-purple {
+        background-color: #6f42c1;
+        color: white;
+    }
+    .btn-outline-purple {
+        border-color: #6f42c1;
+        color: #6f42c1;
+    }
+    .btn-outline-purple:hover {
+        background-color: #6f42c1;
+        color: white;
+    }
+    .chart-container {
+        position: relative;
+    }
+</style>
+{% endblock %}

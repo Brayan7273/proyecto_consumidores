@@ -1,0 +1,16 @@
+# Versiones actualizadas y compatibles
+flask==2.3.2  # Volver a Flask 2.x
+flask-bootstrap==3.3.7.1
+flask-wtf==1.2.1
+
+# Mantén el resto como estaban
+numpy==1.26.0
+pandas==2.1.1
+scikit-learn==1.4.2
+setuptools==68.2.2
+wheel==0.41.3
+tabulate==0.9.0
+fpdf2==2.7.6
+matplotlib==3.8.0
+python-dotenv==1.0.0
+openpyxl==3.1.2
