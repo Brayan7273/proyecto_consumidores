@@ -14,6 +14,12 @@ from matplotlib import pyplot as plt
 from fpdf import FPDF
 import tempfile
 from app import app
+from matplotlib.backends.backend_pdf import PdfPages
+import seaborn as sns
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+
 
 # Configuración de rutas
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -376,67 +382,152 @@ def modelos():
     
     return render_template('modelos.html', modelos=modelos_info)
 
+import json
+
 @app.route('/predecir', methods=['GET', 'POST'])
 def predecir():
-    modelos = get_model_files()
+    modelos_disponibles = get_model_files()
     resultados = None
+    chart_data = None
+
     if request.method == 'POST':
-        if 'archivo' not in request.files or 'modelo' not in request.form:
-            flash("Debe seleccionar un archivo y un modelo", "danger")
+        if 'modelo' not in request.form or not request.form['modelo']:
+            flash('Debe seleccionar un modelo', 'danger')
             return redirect(request.url)
-
+        
+        if 'archivo' not in request.files:
+            flash('No se seleccionó ningún archivo', 'danger')
+            return redirect(request.url)
+        
         file = request.files['archivo']
-        modelo_nombre = request.form['modelo']
-
         if file.filename == '':
-            flash("No se seleccionó archivo", "danger")
+            flash('No se seleccionó ningún archivo', 'danger')
             return redirect(request.url)
+        
+        if file and allowed_file(file.filename):
+            try:
+                filename = secure_filename(file.filename)
+                filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+                file.save(filepath)
 
-        if not allowed_file(file.filename):
-            flash("Archivo no permitido", "danger")
-            return redirect(request.url)
+                if filename.endswith('.csv'):
+                    df = pd.read_csv(filepath)
+                else:
+                    df = pd.read_excel(filepath)
 
-        try:
-            filename = secure_filename(file.filename)
-            filepath = os.path.join(UPLOAD_FOLDER, filename)
-            file.save(filepath)
+                model_path = request.form['modelo']
+                model_data = joblib.load(model_path)
+                modelo = model_data['model']
+                encoder = model_data['encoder']
 
-            # Leer datos según extensión
-            if filename.endswith('.csv'):
-                df = pd.read_csv(filepath)
-            else:
-                df = pd.read_excel(filepath)
+                required_columns = model_data['features']
+                if not all(col in df.columns for col in required_columns):
+                    flash('El archivo no tiene la estructura requerida por el modelo', 'danger')
+                    return redirect(request.url)
 
-            # Cargar modelo
-            model_path = os.path.join(MODEL_FOLDER, modelo_nombre)
-            model_data = joblib.load(model_path)
-            modelo = model_data['model']
-            encoder = model_data['encoder']
-            features = model_data['features']
+                X = df[required_columns]
+                predicciones = modelo.predict(X)
+                df['Prediccion'] = encoder.inverse_transform(predicciones)
 
-            # Validar columnas
-            if not all(col in df.columns for col in features):
-                flash("El archivo no tiene las columnas requeridas por el modelo", "danger")
+                # Datos para gráficas
+                conteo_tipos = df['Prediccion'].value_counts().to_dict()
+                preguntas_ejemplo = [col for col in required_columns if col.startswith('P')][:5]
+                promedios_por_tipo = df.groupby('Prediccion')[preguntas_ejemplo].mean().round(2).to_dict()
+                df['PuntajeTotal'] = df[preguntas_ejemplo].sum(axis=1)
+                distribucion_puntaje = df.groupby('Prediccion')['PuntajeTotal'].describe().to_dict()
+
+                # Generar PDF con resultados completos
+                pdf_filename = 'resultados_completos.pdf'
+                pdf_path = os.path.join(app.config['OUTPUT_FOLDER'], pdf_filename)
+                generar_pdf_con_resultados(df, conteo_tipos, promedios_por_tipo, distribucion_puntaje, pdf_path)
+
+                chart_data = json.dumps({
+                    'conteo_tipos': conteo_tipos,
+                    'promedios_por_tipo': promedios_por_tipo,
+                    'distribucion_puntaje': distribucion_puntaje
+                })
+
+                resultados = df.to_dict(orient='records')
+
+                flash('Predicciones y reporte PDF generados exitosamente', 'success')
+
+            except Exception as e:
+                flash(f'Error al procesar el archivo: {str(e)}', 'danger')
                 return redirect(request.url)
 
-            X = df[features]
-            predicciones = modelo.predict(X)
-            df['Prediccion'] = encoder.inverse_transform(predicciones)
+    return render_template('predecir.html', modelos=modelos_disponibles, resultados=resultados, chart_data=chart_data, pdf_file='resultados_completos.pdf')
 
-            # Guardar resultados
-            output_filename = f"resultados_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-            output_path = os.path.join(OUTPUT_FOLDER, output_filename)
-            df.to_excel(output_path, index=False)
 
-            resultados = df.head(10).to_dict(orient='records')
-            flash("Predicción realizada con éxito", "success")
-            return render_template('predecir.html', modelos=modelos, resultados=resultados, archivo=output_filename)
+import io
+from fpdf import FPDF
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+import os
+import tempfile
 
-        except Exception as e:
-            flash(f"Error: {str(e)}", "danger")
-            return redirect(request.url)
 
-    return render_template('predecir.html', modelos=modelos, resultados=resultados)
+import numpy as np
+import tempfile
+import os
+from fpdf import FPDF
+import matplotlib.pyplot as plt
+
+def generar_pdf_con_resultados(df, conteo_tipos, promedios_por_tipo, distribucion_puntaje, output_path):
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", 'B', 16)
+    pdf.cell(0, 10, "Reporte de Clasificación", ln=True, align='C')
+
+    # Gráfica 1: Pie chart conteo tipos
+    with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp1:
+        plt.figure(figsize=(4,4))
+        plt.pie(conteo_tipos.values(), labels=conteo_tipos.keys(), autopct='%1.1f%%')
+        plt.title("Conteo por tipo")
+        plt.savefig(tmp1.name)
+        plt.close()
+        pdf.image(tmp1.name, x=10, y=30, w=80)
+    os.unlink(tmp1.name)
+
+    # Gráfica 2: Line plot promedios por tipo
+    preguntas = list(promedios_por_tipo[list(promedios_por_tipo.keys())[0]].keys())
+    valores = {k: list(v.values()) for k,v in promedios_por_tipo.items()}
+    with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp2:
+        plt.figure(figsize=(6,4))
+        for tipo, vals in valores.items():
+            plt.plot(preguntas, vals, marker='o', label=tipo)
+        plt.title("Promedios por tipo")
+        plt.legend()
+        plt.savefig(tmp2.name)
+        plt.close()
+        pdf.image(tmp2.name, x=110, y=30, w=80)
+    os.unlink(tmp2.name)
+
+
+    # Página de tabla (primeras 30 filas)
+    pdf.add_page()
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(0, 10, "Resultados (primeras 30 filas)", ln=True)
+    pdf.set_font("Arial", size=10)
+
+    col_names = df.columns.tolist()
+    col_width = pdf.w / (len(col_names) + 1)
+
+    for col in col_names:
+        pdf.cell(col_width, 8, col, border=1)
+    pdf.ln()
+
+    for i, row in df.head(30).iterrows():
+        for val in row:
+            texto = str(val)
+            if len(texto) > 15:
+                texto = texto[:12] + "..."
+            pdf.cell(col_width, 8, texto, border=1)
+        pdf.ln()
+
+    pdf.output(output_path)
+
+
 
 
 @app.route('/descargar/<filename>')

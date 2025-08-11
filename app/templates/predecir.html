@@ -23,26 +23,135 @@
 
     {% if resultados %}
     <hr>
-    <h4>Resultados (primeros 10 registros):</h4>
-    <table class="table table-striped">
-        <thead>
-            <tr>
-                {% for col in resultados[0].keys() %}
-                <th>{{ col }}</th>
-                {% endfor %}
-            </tr>
-        </thead>
-        <tbody>
-            {% for row in resultados %}
-            <tr>
-                {% for col in row.values() %}
-                <td>{{ col }}</td>
-                {% endfor %}
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-    <a href="{{ url_for('descargar', filename=archivo) }}" class="btn btn-success">Descargar Resultados</a>
+    <!-- Sistema de pestañas -->
+    <ul class="nav nav-tabs" id="resultTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="tabla-tab" data-bs-toggle="tab" data-bs-target="#tabla" type="button" role="tab">Tabla de Resultados</button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="graf1-tab" data-bs-toggle="tab" data-bs-target="#graf1" type="button" role="tab">Gráfica Conteo</button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="graf2-tab" data-bs-toggle="tab" data-bs-target="#graf2" type="button" role="tab">Gráfica Promedios</button>
+        </li>
+    </ul>
+
+    <div class="tab-content mt-3">
+        <!-- TABLA -->
+        <div class="tab-pane fade show active" id="tabla" role="tabpanel">
+            <h4>Resultados completos:</h4>
+            <div class="table-responsive" style="max-height: 500px; overflow-y: auto;">
+                <table class="table table-striped table-hover">
+                    <thead>
+                        <tr>
+                            {% for col in resultados[0].keys() %}
+                            <th>{{ col }}</th>
+                            {% endfor %}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in resultados %}
+                        <tr>
+                            {% for col in row.values() %}
+                            <td>{{ col }}</td>
+                            {% endfor %}
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+           {% if pdf_file %}
+<a href="{{ url_for('descargar', filename=pdf_file) }}" class="btn btn-success mt-2">
+    Descargar Reporte Completo (PDF)
+</a>
+{% endif %}
+
+
+        </div>
+
+
+        <!-- GRAFICA 1 -->
+        <div class="tab-pane fade" id="graf1" role="tabpanel">
+            <canvas id="chartConteo"></canvas>
+            <canvas id="chartConteo" width="20" height="20"></canvas>
+
+        </div>
+
+        <!-- GRAFICA 2 -->
+        <div class="tab-pane fade" id="graf2" role="tabpanel">
+            <canvas id="chartPromedios"></canvas>
+        </div>
+        
+    </div>
     {% endif %}
 </div>
+
+{% if chart_data %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    const dataCharts = {{ chart_data|safe }};
+
+    // GRAFICA 1: Pie chart conteo tipos (igual que en PDF)
+    new Chart(document.getElementById('chartConteo'), {
+        type: 'pie',
+        data: {
+            labels: Object.keys(dataCharts.conteo_tipos),
+            datasets: [{
+                label: 'Cantidad',
+                data: Object.values(dataCharts.conteo_tipos),
+                backgroundColor: [
+                    'rgba(255, 99, 132, 0.6)',
+                    'rgba(54, 162, 235, 0.6)',
+                    'rgba(255, 206, 86, 0.6)',
+                    'rgba(75, 192, 192, 0.6)',
+                    'rgba(153, 102, 255, 0.6)',
+                    'rgba(255, 159, 64, 0.6)'
+                ]
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: { position: 'right' }
+            }
+        }
+    });
+
+    // GRAFICA 2: Line plot promedios por tipo (igual que en PDF)
+    const preguntas = Object.keys(Object.values(dataCharts.promedios_por_tipo)[0]);
+    const datasetsLine = Object.entries(dataCharts.promedios_por_tipo).map(([tipo, valores], i) => ({
+        label: tipo,
+        data: Object.values(valores),
+        borderColor: [
+            'rgba(255, 99, 132, 0.8)',
+            'rgba(54, 162, 235, 0.8)',
+            'rgba(255, 206, 86, 0.8)',
+            'rgba(75, 192, 192, 0.8)',
+            'rgba(153, 102, 255, 0.8)',
+            'rgba(255, 159, 64, 0.8)'
+        ][i % 6],
+        fill: false,
+        tension: 0.2
+    }));
+
+    new Chart(document.getElementById('chartPromedios'), {
+        type: 'line',
+        data: {
+            labels: preguntas,
+            datasets: datasetsLine
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: { position: 'top' }
+            },
+            scales: {
+                y: { beginAtZero: true }
+            }
+        }
+    });
+
+</script>
+
+{% endif %}
 {% endblock %}
