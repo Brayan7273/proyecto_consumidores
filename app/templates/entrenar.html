@@ -12,13 +12,14 @@
                         <i class="bi bi-arrow-left"></i> Volver
                     </a>
                 </div>
-                
+
                 <div class="card-body">
                     <form method="POST" action="{{ url_for('entrenar') }}" enctype="multipart/form-data" class="mb-4">
                         <div class="row g-3 align-items-end">
                             <div class="col-md-9">
                                 <label for="archivo" class="form-label">Seleccione archivo de datos:</label>
-                                <input class="form-control" type="file" id="archivo" name="archivo" accept=".xlsx,.xls,.csv" required>
+                                <input class="form-control" type="file" id="archivo" name="archivo"
+                                    accept=".xlsx,.xls,.csv" required>
                                 <div class="form-text">Archivo con columnas P1-P20 y Tipo_Consumidor</div>
                             </div>
                             <div class="col-md-3">
@@ -28,15 +29,15 @@
                             </div>
                         </div>
                     </form>
-                    
+
                     {% with messages = get_flashed_messages(with_categories=true) %}
-                        {% if messages %}
-                            {% for category, message in messages %}
-                                <div class="alert alert-{{ category }}">
-                                    {{ message }}
-                                </div>
-                            {% endfor %}
-                        {% endif %}
+                    {% if messages %}
+                    {% for category, message in messages %}
+                    <div class="alert alert-{{ category }}">
+                        {{ message }}
+                    </div>
+                    {% endfor %}
+                    {% endif %}
                     {% endwith %}
                 </div>
             </div>
@@ -72,8 +73,10 @@
                                 </table>
                             </div>
                             <div class="mt-3">
-                                <span class="badge bg-secondary">Mostrando 10 de {{ datos.total_registros }} registros</span>
-                                <a href="{{ url_for('descargar_datos') }}" class="btn btn-sm btn-outline-info float-end">
+                                <span class="badge bg-secondary">Mostrando 10 de {{ datos.total_registros }}
+                                    registros</span>
+                                <a href="{{ url_for('descargar_datos') }}"
+                                    class="btn btn-sm btn-outline-info float-end">
                                     <i class="bi bi-download me-1"></i> Descargar CSV
                                 </a>
                             </div>
@@ -98,7 +101,7 @@
                                 <div class="col-md-6">
                                     <div class="p-3 bg-light rounded-3">
                                         <h4 class="h6 mb-2">Precisión</h4>
-                                        <p class="mb-0">{{ "%.2f"|format(modelo_info.accuracy * 100) }}%</p>
+                                        <p class="mb-0">{{ "%.2f"|format(modelo_info.accuracy|float * 100) }}%</p>
                                     </div>
                                 </div>
                                 <div class="col-md-6">
@@ -128,14 +131,14 @@
                                             </thead>
                                             <tbody>
                                                 {% for tipo, metrics in modelo_info.metricas.items() %}
-                                                    {% if tipo not in ['accuracy', 'macro avg', 'weighted avg'] %}
-                                                    <tr>
-                                                        <td>{{ tipo }}</td>
-                                                        <td>{{ "%.2f"|format(metrics.precision) }}</td>
-                                                        <td>{{ "%.2f"|format(metrics.recall) }}</td>
-                                                        <td>{{ "%.2f"|format(metrics['f1-score']) }}</td>
-                                                    </tr>
-                                                    {% endif %}
+                                                {% if tipo not in ['accuracy', 'macro avg', 'weighted avg'] %}
+                                                <tr>
+                                                    <td>{{ tipo }}</td>
+                                                    <td>{{ "%.2f"|format(metrics.precision) }}</td>
+                                                    <td>{{ "%.2f"|format(metrics.recall) }}</td>
+                                                    <td>{{ "%.2f"|format(metrics['f1-score']) }}</td>
+                                                </tr>
+                                                {% endif %}
                                                 {% endfor %}
                                             </tbody>
                                         </table>
@@ -169,7 +172,7 @@
                                         <canvas id="distribucionChart"></canvas>
                                     </div>
                                 </div>
-                                
+
                                 <!-- Gráfico de Importancia de Variables -->
                                 <div class="col-md-6 mb-4">
                                     <h4 class="h6 mb-3">Variables Importantes</h4>
@@ -177,23 +180,21 @@
                                         <canvas id="importanciaChart"></canvas>
                                     </div>
                                 </div>
-                                
+
                                 <!-- Gráfico de Correlación -->
                                 <div class="col-12 mb-4">
                                     <h4 class="h6 mb-3">Matriz de Correlación</h4>
-                                    <div class="chart-container" style="height: 400px;">
+                                    <div class="chart-container" style="height: 800px;">
                                         <canvas id="correlacionChart"></canvas>
                                     </div>
                                 </div>
                             </div>
-                            
+
                             <div class="mt-4 d-flex justify-content-between">
-                                <a href="{{ url_for('generar_reporte', formato='pdf') }}" class="btn btn-danger">
-                                    <i class="bi bi-file-earmark-pdf me-1"></i> Descargar PDF
+                                <a href="{{ url_for('descargar_ultimo_reporte_pdf') }}" class="btn btn-danger">
+                                    <i class="bi bi-file-earmark-pdf me-1"></i> Descargar reporte PDF
                                 </a>
-                                <a href="{{ url_for('generar_reporte', formato='excel') }}" class="btn btn-success">
-                                    <i class="bi bi-file-earmark-excel me-1"></i> Descargar Excel
-                                </a>
+                               
                             </div>
                         </div>
                     </div>
@@ -214,26 +215,26 @@
     new Chart(distribucionCtx, {
         type: 'doughnut',
         data: {
-            labels: {{ modelo_info.distribucion.keys()|list|tojson }},
-            datasets: [{
-                data: {{ modelo_info.distribucion.values()|list|tojson }},
-                backgroundColor: [
-                    '#4e73df', '#1cc88a', '#36b9cc', '#f6c23e',
-                    '#e74a3b', '#fd7e14', '#20c997', '#6610f2'
-                ],
-                hoverBorderColor: "rgba(234, 236, 244, 1)",
+            labels: {{ modelo_info.distribucion.keys() | list | tojson }},
+        datasets: [{
+            data: {{ modelo_info.distribucion.values() | list | tojson }},
+        backgroundColor: [
+            '#4e73df', '#1cc88a', '#36b9cc', '#f6c23e',
+            '#e74a3b', '#fd7e14', '#20c997', '#6610f2'
+        ],
+        hoverBorderColor: "rgba(234, 236, 244, 1)",
             }]
         },
         options: {
-            maintainAspectRatio: false,
-            plugins: {
-                legend: {
-                    position: 'right'
-                }
+        maintainAspectRatio: false,
+        plugins: {
+            legend: {
+                position: 'right'
             }
         }
+    }
     });
-    
+
     // Gráfico de importancia de variables (ejemplo)
     const importanciaCtx = document.getElementById('importanciaChart').getContext('2d');
     new Chart(importanciaCtx, {
@@ -267,7 +268,7 @@
             }
         }
     });
-    
+
     // Gráfico de matriz de correlación (ejemplo)
     const correlacionCtx = document.getElementById('correlacionChart').getContext('2d');
     const corrData = {
@@ -275,33 +276,33 @@
         datasets: [{
             label: 'Correlación',
             data: [
-                {x: 'P1', y: 'P1', v: 1.0}, {x: 'P1', y: 'P2', v: 0.2}, {x: 'P1', y: 'P3', v: -0.1},
-                {x: 'P2', y: 'P1', v: 0.2}, {x: 'P2', y: 'P2', v: 1.0}, {x: 'P2', y: 'P3', v: 0.1},
-                {x: 'P3', y: 'P1', v: -0.1}, {x: 'P3', y: 'P2', v: 0.1}, {x: 'P3', y: 'P3', v: 1.0}
+                { x: 'P1', y: 'P1', v: 1.0 }, { x: 'P1', y: 'P2', v: 0.2 }, { x: 'P1', y: 'P3', v: -0.1 },
+                { x: 'P2', y: 'P1', v: 0.2 }, { x: 'P2', y: 'P2', v: 1.0 }, { x: 'P2', y: 'P3', v: 0.1 },
+                { x: 'P3', y: 'P1', v: -0.1 }, { x: 'P3', y: 'P2', v: 0.1 }, { x: 'P3', y: 'P3', v: 1.0 }
             ],
-            backgroundColor: function(ctx) {
+            backgroundColor: function (ctx) {
                 const value = ctx.raw.v;
                 const alpha = Math.abs(value);
-                return value < 0 ? 
-                    `rgba(255, 99, 132, ${alpha})` : 
+                return value < 0 ?
+                    `rgba(255, 99, 132, ${alpha})` :
                     `rgba(54, 162, 235, ${alpha})`;
             },
-            borderColor: function(ctx) {
+            borderColor: function (ctx) {
                 const value = ctx.raw.v;
                 return value < 0 ? 'rgb(255, 99, 132)' : 'rgb(54, 162, 235)';
             },
             borderWidth: 1,
-            width: function(ctx) {
+            width: function (ctx) {
                 const a = ctx.chart.chartArea;
                 return (a.right - a.left) / 10 - 2;
             },
-            height: function(ctx) {
+            height: function (ctx) {
                 const a = ctx.chart.chartArea;
                 return (a.bottom - a.top) / 10 - 2;
             }
         }]
     };
-    
+
     new Chart(correlacionCtx, {
         type: 'matrix',
         data: corrData,
@@ -310,10 +311,10 @@
             plugins: {
                 tooltip: {
                     callbacks: {
-                        title: function(context) {
+                        title: function (context) {
                             return '';
                         },
-                        label: function(context) {
+                        label: function (context) {
                             const v = context.raw.v;
                             return `${context.raw.x} vs ${context.raw.y}: ${v.toFixed(2)}`;
                         }
@@ -351,24 +352,30 @@
     .bg-purple {
         background-color: #6f42c1;
     }
+
     .btn-purple {
         background-color: #6f42c1;
         color: white;
     }
+
     .btn-outline-purple {
         border-color: #6f42c1;
         color: #6f42c1;
     }
+
     .btn-outline-purple:hover {
         background-color: #6f42c1;
         color: white;
     }
+
     .chart-container {
         position: relative;
     }
+
     .card {
         border-radius: 0.5rem;
     }
+
     .card-header {
         border-radius: 0.5rem 0.5rem 0 0 !important;
     }
