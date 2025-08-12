@@ -711,12 +711,145 @@ def predecir():
 
 
 
+
+# Diccionario con preguntas por tipo
+preguntas_por_tipo = {
+    "Ahorro": ["P1", "P2", "P3", "P4", "P5"],
+    "Planificador": ["P6", "P7", "P8", "P9", "P10"],
+    "Impulsivo": ["P11", "P12", "P13", "P14", "P15"],
+    "Leal": ["P16", "P17", "P18", "P19", "P20"]
+}
+
+# Preguntas completas para mostrar en el frontend
+preguntas_completas = {
+    "P1": "Prefiero esperar a que un producto esté en oferta antes de comprarlo.",
+    "P2": "Me esfuerzo por gastar menos de lo que gano cada mes.",
+    "P3": "Antes de comprar, comparo precios en varias tiendas o sitios web.",
+    "P4": "Considero que ahorrar para emergencias es más importante que gastar en lujos.",
+    "P5": "Evito compras que impliquen endeudarme.",
+
+    "P6": "Me gusta planificar mis compras con antelación y hacer listas detalladas.",
+    "P7": "Antes de tomar una decisión de compra, investigo a fondo las opciones.",
+    "P8": "Prefiero retrasar una compra hasta estar completamente seguro de mi elección.",
+    "P9": "Me gusta establecer metas financieras claras y cumplirlas.",
+    "P10": "Evalúo los beneficios y desventajas antes de comprar cualquier producto importante.",
+
+    "P11": "Disfruto comprar cosas nuevas aunque no las necesite realmente.",
+    "P12": "A veces hago compras sin pensarlo mucho, solo porque algo me llamó la atención.",
+    "P13": "Me atraen los productos novedosos o ediciones limitadas.",
+    "P14": "Me emociona la idea de probar marcas o artículos que nunca he usado antes.",
+    "P15": "Es probable que compre algo solo por el placer de tenerlo en ese momento.",
+
+    "P16": "Prefiero comprar siempre las mismas marcas en las que confío.",
+    "P17": "Estoy dispuesto a pagar más por una marca que considero prestigiosa.",
+    "P18": "Me gusta que mis compras reflejen mi estilo y estatus social.",
+    "P19": "Recomiendo mis marcas favoritas a familiares y amigos.",
+    "P20": "Me siento más seguro comprando productos de marcas reconocidas, aunque sean más caros."
+}
+
+df_global = None
+
+@app.route('/analisis_consumidores', methods=['GET', 'POST'])
+def analisis_consumidores():
+    global df_global
+    resultados = None
+    columnas = None
+    estadisticas = None
+    tipos_disponibles = []
+    excel_filename = None
+
+    if request.method == 'POST' and 'archivo' in request.files:
+        file = request.files['archivo']
+        if file and allowed_file(file.filename):
+            filename = secure_filename(file.filename)
+            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            file.save(filepath)
+
+            if filename.endswith('.csv'):
+                df_global = pd.read_csv(filepath)
+            else:
+                df_global = pd.read_excel(filepath)
+
+            tipos_disponibles = sorted(set(preguntas_por_tipo.keys()))
+
+            columnas_fijas = ['Nombre', 'Sexo']
+            preguntas = []
+            for t in tipos_disponibles:
+                preguntas += [p for p in preguntas_por_tipo.get(t, []) if p in df_global.columns]
+            preguntas = list(dict.fromkeys(preguntas))
+
+            columnas = columnas_fijas + preguntas
+
+            resultados = df_global[columnas].head(30).to_dict(orient='records')
+
+            promedios = df_global[preguntas].mean().round(2).to_dict() if preguntas else {}
+
+            estadisticas = {
+                'total_registros': len(df_global),
+                'promedios': promedios
+            }
+
+            excel_filename = 'datos_cargados.xlsx'
+            path_excel = os.path.join(app.config['OUTPUT_FOLDER'], excel_filename)
+            df_global[columnas].to_excel(path_excel, index=False)
+
+            flash('Archivo cargado exitosamente', 'success')
+        else:
+            flash('Archivo no permitido', 'danger')
+            return redirect(request.url)
+
+    elif request.method == 'POST' and request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        tipos_seleccionados = request.form.getlist('tipos_seleccionados')
+
+        if df_global is None:
+            return jsonify({'error': 'No hay datos cargados'}), 400
+
+        if len(tipos_seleccionados) < 2 or len(tipos_seleccionados) > 4:
+            return jsonify({'error': 'Selecciona entre 2 y 4 tipos'}), 400
+
+        df_filtrado = df_global.copy()
+        df_filtrado = df_filtrado[df_filtrado.columns.intersection(['Nombre', 'Sexo'] + sum([preguntas_por_tipo[t] for t in tipos_seleccionados], []))]
+
+        resultados = df_filtrado.head(30).to_dict(orient='records')
+
+        promedios = df_filtrado.iloc[:, 2:].mean().round(2).to_dict() if len(df_filtrado.columns) > 2 else {}
+
+        estadisticas = {
+            'total_registros': len(df_filtrado),
+            'promedios': promedios
+        }
+
+        excel_filename = 'filtrado_consumidores.xlsx'
+        path_excel = os.path.join(app.config['OUTPUT_FOLDER'], excel_filename)
+        df_filtrado.to_excel(path_excel, index=False)
+
+        columnas = ['Nombre', 'Sexo'] + sum([preguntas_por_tipo[t] for t in tipos_seleccionados], [])
+
+        return jsonify({
+            'resultados': resultados,
+            'columnas': columnas,
+            'estadisticas': estadisticas,
+            'excel_filename': excel_filename
+        })
+
+    return render_template('analisis_consumidores.html',
+                           tipos_disponibles=tipos_disponibles,
+                           resultados=resultados,
+                           columnas=columnas,
+                           estadisticas=estadisticas,
+                           excel_filename=excel_filename,
+                           preguntas_por_tipo=preguntas_por_tipo,
+                           preguntas_completas=preguntas_completas)
+
 @app.route('/descargar/<filename>')
 def descargar_filtrados(filename):
     return send_from_directory(app.config['OUTPUT_FOLDER'], filename, as_attachment=True)
 
 if __name__ == '__main__':
     app.run(debug=True)
+
+
+
 
 
 import io
