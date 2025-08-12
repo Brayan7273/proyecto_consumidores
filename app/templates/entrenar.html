@@ -113,8 +113,8 @@
                                         <p class="mb-0">{{ "%.2f"|format(modelo_info.tamanio) }} MB</p>
                                     </div>
                                 </div>
-                                 <!-- Métricas -->
-                                <div class="col-md-6">
+                                <!-- Métricas -->
+                                <div class="col-md-12">
                                     <h4 class="h6 mb-3">Métricas del Modelo</h4>
                                     <div class="table-responsive">
                                         <table class="table table-sm">
@@ -150,28 +150,41 @@
                                     <i class="bi bi-magic me-1"></i> Usar para Clasificar
                                 </a>
                             </div>
-                            
                         </div>
                     </div>
                 </div>
 
-                <!-- Estadísticas -->
+                <!-- Estadísticas y Gráficos -->
                 <div class="col-12 mb-4">
                     <div class="card shadow-sm">
                         <div class="card-header bg-success text-white">
-                            <h3 class="h5 mb-0"><i class="bi bi-bar-chart me-2"></i>Estadísticas</h3>
+                            <h3 class="h5 mb-0"><i class="bi bi-bar-chart me-2"></i>Estadísticas y Gráficos</h3>
                         </div>
                         <div class="card-body">
                             <div class="row">
                                 <!-- Gráfico de Distribución -->
-                                <div class="col-md-6">
+                                <div class="col-md-6 mb-4">
                                     <h4 class="h6 mb-3">Distribución de Tipos</h4>
-                                    <div class="chart-container" style="height: 250px;">
+                                    <div class="chart-container" style="height: 300px;">
                                         <canvas id="distribucionChart"></canvas>
                                     </div>
                                 </div>
                                 
-                               
+                                <!-- Gráfico de Importancia de Variables -->
+                                <div class="col-md-6 mb-4">
+                                    <h4 class="h6 mb-3">Variables Importantes</h4>
+                                    <div class="chart-container" style="height: 300px;">
+                                        <canvas id="importanciaChart"></canvas>
+                                    </div>
+                                </div>
+                                
+                                <!-- Gráfico de Correlación -->
+                                <div class="col-12 mb-4">
+                                    <h4 class="h6 mb-3">Matriz de Correlación</h4>
+                                    <div class="chart-container" style="height: 400px;">
+                                        <canvas id="correlacionChart"></canvas>
+                                    </div>
+                                </div>
                             </div>
                             
                             <div class="mt-4 d-flex justify-content-between">
@@ -193,6 +206,7 @@
 
 <!-- Scripts para gráficos -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-chart-matrix@1.0.0/dist/chartjs-chart-matrix.min.js"></script>
 <script>
     {% if modelo_info and modelo_info.distribucion %}
     // Gráfico de distribución
@@ -219,6 +233,117 @@
             }
         }
     });
+    
+    // Gráfico de importancia de variables (ejemplo)
+    const importanciaCtx = document.getElementById('importanciaChart').getContext('2d');
+    new Chart(importanciaCtx, {
+        type: 'bar',
+        data: {
+            labels: ['P1', 'P3', 'P5', 'P7', 'P9', 'P11', 'P13', 'P15', 'P17', 'P19'],
+            datasets: [{
+                label: 'Importancia',
+                data: [0.12, 0.15, 0.08, 0.11, 0.09, 0.07, 0.13, 0.06, 0.14, 0.05],
+                backgroundColor: '#36b9cc',
+                borderColor: '#2e59a9',
+                borderWidth: 1
+            }]
+        },
+        options: {
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    title: {
+                        display: true,
+                        text: 'Importancia'
+                    }
+                },
+                x: {
+                    title: {
+                        display: true,
+                        text: 'Variables'
+                    }
+                }
+            }
+        }
+    });
+    
+    // Gráfico de matriz de correlación (ejemplo)
+    const correlacionCtx = document.getElementById('correlacionChart').getContext('2d');
+    const corrData = {
+        labels: ['P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7', 'P8', 'P9', 'P10'],
+        datasets: [{
+            label: 'Correlación',
+            data: [
+                {x: 'P1', y: 'P1', v: 1.0}, {x: 'P1', y: 'P2', v: 0.2}, {x: 'P1', y: 'P3', v: -0.1},
+                {x: 'P2', y: 'P1', v: 0.2}, {x: 'P2', y: 'P2', v: 1.0}, {x: 'P2', y: 'P3', v: 0.1},
+                {x: 'P3', y: 'P1', v: -0.1}, {x: 'P3', y: 'P2', v: 0.1}, {x: 'P3', y: 'P3', v: 1.0}
+            ],
+            backgroundColor: function(ctx) {
+                const value = ctx.raw.v;
+                const alpha = Math.abs(value);
+                return value < 0 ? 
+                    `rgba(255, 99, 132, ${alpha})` : 
+                    `rgba(54, 162, 235, ${alpha})`;
+            },
+            borderColor: function(ctx) {
+                const value = ctx.raw.v;
+                return value < 0 ? 'rgb(255, 99, 132)' : 'rgb(54, 162, 235)';
+            },
+            borderWidth: 1,
+            width: function(ctx) {
+                const a = ctx.chart.chartArea;
+                return (a.right - a.left) / 10 - 2;
+            },
+            height: function(ctx) {
+                const a = ctx.chart.chartArea;
+                return (a.bottom - a.top) / 10 - 2;
+            }
+        }]
+    };
+    
+    new Chart(correlacionCtx, {
+        type: 'matrix',
+        data: corrData,
+        options: {
+            maintainAspectRatio: false,
+            plugins: {
+                tooltip: {
+                    callbacks: {
+                        title: function(context) {
+                            return '';
+                        },
+                        label: function(context) {
+                            const v = context.raw.v;
+                            return `${context.raw.x} vs ${context.raw.y}: ${v.toFixed(2)}`;
+                        }
+                    }
+                },
+                legend: {
+                    display: false
+                }
+            },
+            scales: {
+                x: {
+                    ticks: {
+                        display: true
+                    },
+                    grid: {
+                        display: false
+                    }
+                },
+                y: {
+                    offset: true,
+                    ticks: {
+                        display: true
+                    },
+                    grid: {
+                        display: false
+                    }
+                }
+            }
+        }
+    });
     {% endif %}
 </script>
 
@@ -240,6 +365,12 @@
     }
     .chart-container {
         position: relative;
+    }
+    .card {
+        border-radius: 0.5rem;
+    }
+    .card-header {
+        border-radius: 0.5rem 0.5rem 0 0 !important;
     }
 </style>
 {% endblock %}

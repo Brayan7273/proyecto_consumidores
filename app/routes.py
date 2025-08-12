@@ -1,6 +1,6 @@
 from flask import abort, jsonify, render_template, request, redirect, send_file, url_for, flash, send_from_directory
 from werkzeug.utils import secure_filename
-from datetime import datetime
+from datetime import datetime, time
 import os
 import pandas as pd
 import joblib
@@ -20,18 +20,31 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from flask import session
-
+from flask import send_file
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+from io import BytesIO
+import numpy as np
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Image, Paragraph
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib import colors
+from flask import g  # Añade esto al inicio con los otros imports
+from apscheduler.schedulers.background import BackgroundScheduler
+import atexit
 
 # Configuración de rutas
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 UPLOAD_FOLDER = os.path.join(BASE_DIR, 'app', 'data', 'uploads')
 MODEL_FOLDER = os.path.join(BASE_DIR, 'app', 'data', 'models')
 OUTPUT_FOLDER = os.path.join(BASE_DIR, 'app', 'data', 'outputs')
-
+REPORT_FOLDER = os.path.join(BASE_DIR, 'app', 'data', 'reports')
 # Crear carpetas si no existen
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(MODEL_FOLDER, exist_ok=True)
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
+os.makedirs(REPORT_FOLDER, exist_ok=True)
 
 # Diccionario con preguntas por tipo (ajústalo a tus preguntas)
 preguntas_por_tipo = {
@@ -69,6 +82,7 @@ preguntas_por_tipo = {
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MODEL_FOLDER'] = MODEL_FOLDER
 app.config['OUTPUT_FOLDER'] = OUTPUT_FOLDER
+app.config['REPORT_FOLDER'] = REPORT_FOLDER
 
 df_global = None
 
@@ -95,10 +109,10 @@ def validate_dataframe(df):
 def index():
     return render_template('index.html', now=datetime.now())
 
+
 @app.route('/entrenar', methods=['GET', 'POST'])
 def entrenar():
-    datos_df = None  # Mantenemos el DataFrame original
-    datos_template = None  # Datos preparados para el template
+    datos_template = None
     modelo_info = None
     
     if request.method == 'POST':
@@ -112,18 +126,18 @@ def entrenar():
             return redirect(url_for('entrenar'))
         
         try:
-            # Guardar archivo
+            # Guardar archivo temporalmente
             filename = secure_filename(file.filename)
             filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
             file.save(filepath)
             
-            # Leer y validar datos
+            # Leer datos
             if filename.endswith('.csv'):
                 df = pd.read_csv(filepath)
             else:
                 df = pd.read_excel(filepath)
             
-            # Validación de estructura
+            # Validar estructura
             required_cols = [f'P{i}' for i in range(1, 21)] + ['Tipo_Consumidor']
             missing_cols = [col for col in required_cols if col not in df.columns]
             
@@ -175,12 +189,12 @@ def entrenar():
                 'report': report
             }, model_path)
             
-            # Preparar datos para template
-            datos_df = df  # Guardamos el DataFrame completo
+            # Preparar datos para template y reporte
             datos_template = {
                 'columnas': df.columns.tolist(),
                 'filas': df.head(10).to_dict('records'),
-                'total_registros': len(df)
+                'total_registros': len(df),
+                'dataframe': df.to_json()  # Guardamos el DataFrame serializado
             }
             
             modelo_info = {
@@ -192,16 +206,20 @@ def entrenar():
                 'distribucion': df['Tipo_Consumidor'].value_counts().to_dict()
             }
             
+            # Guardar datos en sesión para el reporte
+            session['modelo_info'] = modelo_info
+            session['datos_reporte'] = datos_template
+            
             flash('Modelo entrenado exitosamente!', 'success')
             
         except Exception as e:
             flash(f'Error al procesar el archivo: {str(e)}', 'danger')
+            return redirect(url_for('entrenar'))
     
     return render_template(
         'entrenar.html',
         datos=datos_template,
-        modelo_info=modelo_info,
-        datos_df=datos_df  # Pasamos el DataFrame por si acaso
+        modelo_info=modelo_info
     )
 
 
@@ -303,117 +321,202 @@ def descargar_modelo_seleccionado(modelname):
 
 @app.route('/generar_reporte/<formato>')
 def generar_reporte(formato):
+    # Obtener datos de la sesión
+    modelo_info = session.get('modelo_info')
+    datos_reporte = session.get('datos_reporte')
+    
+    if not modelo_info or not datos_reporte:
+        flash('No hay datos de modelo para generar reporte', 'danger')
+        return redirect(url_for('entrenar'))
+    
     try:
-        # Obtener modelo
-        models = get_model_files()
-        if not models:
-            flash('No hay modelos entrenados', 'warning')
-            return redirect(url_for('entrenar'))
-            
-        latest_model = max(models, key=os.path.getctime)
-        model_data = joblib.load(latest_model)
+        # Convertir datos a DataFrame
+        df = pd.read_json(datos_reporte['dataframe'])
         
-        # Obtener datos
-        files = glob.glob(os.path.join(UPLOAD_FOLDER, '*'))
-        if not files:
-            flash('No hay archivos de datos', 'warning')
-            return redirect(url_for('entrenar'))
-            
-        latest_file = max(files, key=os.path.getctime)
-        df = pd.read_excel(latest_file)
+        # Crear gráficos adicionales
+        plt.switch_backend('Agg')  # Para evitar problemas con matplotlib en threads
+        
+        # Gráfico 1: Distribución de tipos
+        fig1 = plt.figure(figsize=(8, 6))
+        labels = list(modelo_info['distribucion'].keys())
+        sizes = list(modelo_info['distribucion'].values())
+        plt.pie(sizes, labels=labels, autopct='%1.1f%%', startangle=90)
+        plt.title('Distribución de Tipos de Consumidores')
+        plt.axis('equal')
+        buf1 = io.BytesIO()
+        plt.savefig(buf1, format='png', bbox_inches='tight')
+        plt.close(fig1)
+        
+        # Gráfico 2: Matriz de correlación
+        fig2 = plt.figure(figsize=(10, 8))
+        numeric_cols = [col for col in df.columns if col.startswith('P')]
+        corr = df[numeric_cols].corr()
+        sns.heatmap(corr, annot=True, fmt=".2f", cmap='coolwarm', center=0)
+        plt.title('Matriz de Correlación entre Variables')
+        buf2 = io.BytesIO()
+        plt.savefig(buf2, format='png', bbox_inches='tight')
+        plt.close(fig2)
+        
+        # Gráfico 3: Boxplot de variables importantes
+        fig3 = plt.figure(figsize=(10, 6))
+        top_vars = corr.abs().mean().sort_values(ascending=False).head(5).index
+        df_melt = pd.melt(df[list(top_vars) + ['Tipo_Consumidor']], 
+                         id_vars='Tipo_Consumidor',
+                         var_name='Variable',
+                         value_name='Valor')
+        sns.boxplot(x='Variable', y='Valor', hue='Tipo_Consumidor', data=df_melt)
+        plt.title('Distribución de Variables por Tipo de Consumidor')
+        plt.xticks(rotation=45)
+        buf3 = io.BytesIO()
+        plt.savefig(buf3, format='png', bbox_inches='tight')
+        plt.close(fig3)
         
         if formato == 'pdf':
-            pdf = FPDF()
-            pdf.add_page()
-            pdf.set_font("Arial", size=12)
+            # Crear PDF
+            buffer = io.BytesIO()
+            doc = SimpleDocTemplate(buffer, pagesize=letter)
+            elements = []
             
-            # Cabecera
-            pdf.cell(200, 10, txt="Reporte de Entrenamiento", ln=1, align='C')
-            pdf.ln(10)
+            styles = getSampleStyleSheet()
+            elements.append(Paragraph("Reporte del Modelo de Consumidores", styles['Title']))
+            elements.append(Paragraph(f"Fecha: {modelo_info['fecha']}", styles['Normal']))
             
             # Información del modelo
-            pdf.set_font("Arial", 'B', 12)
-            pdf.cell(200, 10, txt="Información del Modelo", ln=1)
-            pdf.set_font("Arial", size=10)
-            pdf.cell(200, 10, txt=f"Algoritmo: Random Forest", ln=1)
-            pdf.cell(200, 10, txt=f"Precisión: {float(model_data['accuracy']):.2%}", ln=1)
-            pdf.cell(200, 10, txt=f"Fecha: {model_data['training_date']}", ln=1)
-            pdf.ln(10)
+            model_data = [
+                ["Algoritmo", modelo_info['algoritmo']],
+                ["Precisión", f"{modelo_info['accuracy']*100:.2f}%"],
+                ["Tamaño del modelo", f"{modelo_info['tamanio']:.2f} MB"]
+            ]
+            model_table = Table(model_data)
+            model_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+                ('GRID', (0, 0), (-1, -1), 1, colors.black)
+            ]))
+            elements.append(model_table)
             
-            # Gráfico
-            distribucion = df['Tipo_Consumidor'].value_counts()
-            plt.figure(figsize=(6,6))
-            plt.pie(distribucion, labels=distribucion.index, autopct='%1.1f%%')
-            plt.title('Distribución de Tipos')
+            # Métricas detalladas
+            elements.append(Paragraph("\nMétricas Detalladas", styles['Heading2']))
+            metric_data = [["Tipo", "Precisión", "Recall", "F1-Score"]]
             
-            temp_img = tempfile.NamedTemporaryFile(suffix='.png', delete=False)
-            plt.savefig(temp_img.name)
-            plt.close()
+            for tipo, metrica in modelo_info['metricas'].items():
+                if tipo not in ['accuracy', 'macro avg', 'weighted avg']:
+                    metric_data.append([
+                        tipo,
+                        f"{metrica['precision']:.2f}",
+                        f"{metrica['recall']:.2f}",
+                        f"{metrica['f1-score']:.2f}"
+                    ])
             
-            pdf.image(temp_img.name, x=50, w=110)
-            os.unlink(temp_img.name)
-            pdf.ln(80)
+            metric_table = Table(metric_data)
+            metric_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                ('FONTSIZE', (0, 0), (-1, -1), 10)
+            ]))
+            elements.append(metric_table)
             
-            # Métricas
-            pdf.set_font("Arial", 'B', 12)
-            pdf.cell(200, 10, txt="Métricas por Tipo", ln=1)
+            # Agregar gráficos al PDF
+            elements.append(Paragraph("\nAnálisis Gráfico", styles['Heading2']))
             
-            for tipo, metricas in model_data['report'].items():
-                if isinstance(metricas, dict):
-                    pdf.set_font("Arial", 'B', 10)
-                    pdf.cell(200, 10, txt=f"Tipo: {tipo}", ln=1)
-                    pdf.set_font("Arial", size=10)
-                    for k, v in metricas.items():
-                        if isinstance(v, (int, float)):
-                            pdf.cell(200, 10, txt=f"{k}: {v:.2f}", ln=1)
-                    pdf.ln(5)
+            for i, (buf, title) in enumerate(zip(
+                [buf1, buf2, buf3],
+                ['Distribución de Tipos', 'Matriz de Correlación', 'Boxplot por Tipo']
+            )):
+                buf.seek(0)
+                elements.append(Paragraph(title, styles['Heading3']))
+                img = Image(buf, width=400, height=300)
+                elements.append(img)
             
-            # Generar PDF
-            pdf_output = io.BytesIO()
-            pdf.output(pdf_output)
-            pdf_output.seek(0)
+            # Construir PDF
+            doc.build(elements)
+            buffer.seek(0)
             
+            # Guardar copia del reporte
+            report_filename = f"reporte_{modelo_info['fecha']}.pdf"
+            report_path = os.path.join(REPORT_FOLDER, report_filename)
+            with open(report_path, 'wb') as f:
+                f.write(buffer.getbuffer())
+            
+            buffer.seek(0)
             return send_file(
-                pdf_output,
-                mimetype='application/pdf',
+                buffer,
                 as_attachment=True,
-                download_name='reporte_entrenamiento.pdf'
+                download_name=f'reporte_modelo_{modelo_info["fecha"]}.pdf',
+                mimetype='application/pdf'
             )
             
         elif formato == 'excel':
-            output = io.BytesIO()
-            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                # Datos
+            # Crear Excel con gráficos
+            buffer = io.BytesIO()
+            with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+                # Hoja 1: Datos
                 df.to_excel(writer, sheet_name='Datos', index=False)
                 
-                # Métricas
-                metric_data = []
-                for tipo, vals in model_data['report'].items():
-                    if isinstance(vals, dict):
-                        row = {'Tipo': tipo}
-                        row.update({k: v for k, v in vals.items() if isinstance(v, (int, float))})
-                        metric_data.append(row)
+                # Hoja 2: Métricas
+                metricas = []
+                for tipo, metrica in modelo_info['metricas'].items():
+                    if tipo not in ['accuracy', 'macro avg', 'weighted avg']:
+                        metricas.append({
+                            'Tipo': tipo,
+                            'Precisión': metrica['precision'],
+                            'Recall': metrica['recall'],
+                            'F1-Score': metrica['f1-score']
+                        })
+                pd.DataFrame(metricas).to_excel(writer, sheet_name='Métricas', index=False)
                 
-                pd.DataFrame(metric_data).to_excel(writer, sheet_name='Métricas', index=False)
+                # Hoja 3: Resumen del Modelo
+                resumen_data = [
+                    ['Algoritmo', modelo_info['algoritmo']],
+                    ['Precisión', modelo_info['accuracy']],
+                    ['Fecha', modelo_info['fecha']],
+                    ['Tamaño del modelo (MB)', modelo_info['tamanio']]
+                ]
+                resumen_df = pd.DataFrame(resumen_data, columns=['Atributo', 'Valor'])
+                resumen_df.to_excel(writer, sheet_name='Resumen', index=False)
                 
-                # Resumen
-                summary = pd.DataFrame({
-                    'Métrica': ['Algoritmo', 'Precisión', 'Fecha'],
-                    'Valor': ['Random Forest', model_data['accuracy'], model_data['training_date']]
-                })
-                summary.to_excel(writer, sheet_name='Resumen', index=False)
+                # Agregar gráficos
+                workbook = writer.book
+                worksheet = workbook.add_worksheet('Gráficos')
+                
+                # Insertar imágenes
+                for i, (buf, title) in enumerate(zip(
+                    [buf1, buf2, buf3],
+                    ['Distribución de Tipos', 'Matriz de Correlación', 'Boxplot por Tipo']
+                )):
+                    buf.seek(0)
+                    worksheet.insert_image(
+                        f'A{1+i*20}',
+                        '',
+                        {'image_data': buf, 'x_scale': 0.5, 'y_scale': 0.5}
+                    )
+                    worksheet.write(f'A{1+i*20+15}', title)
             
-            output.seek(0)
+            buffer.seek(0)
+            
+            # Guardar copia del reporte
+            report_filename = f"reporte_{modelo_info['fecha']}.xlsx"
+            report_path = os.path.join(REPORT_FOLDER, report_filename)
+            with open(report_path, 'wb') as f:
+                f.write(buffer.getbuffer())
+            
+            buffer.seek(0)
             return send_file(
-                output,
-                mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                buffer,
                 as_attachment=True,
-                download_name='reporte_entrenamiento.xlsx'
+                download_name=f'reporte_modelo_{modelo_info["fecha"]}.xlsx',
+                mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
             )
             
     except Exception as e:
         flash(f'Error al generar reporte: {str(e)}', 'danger')
         return redirect(url_for('entrenar'))
+
 
 # ... (resto de las rutas se mantienen igual) ...
 def entrenar_modelo(df):
@@ -722,3 +825,21 @@ def metricas_modelo(nombre):
 def seleccionar_modelo(nombre):
     session['modelo_seleccionado'] = nombre
     return redirect(url_for('/predecir'))  
+
+
+def limpiar_reportes_temporales():
+    temp_dir = os.path.join(app.root_path, 'temp_reports')
+    if os.path.exists(temp_dir):
+        now = time.time()
+        for f in os.listdir(temp_dir):
+            f_path = os.path.join(temp_dir, f)
+            if os.stat(f_path).st_mtime < now - 3600:  # Eliminar archivos con más de 1 hora
+                os.remove(f_path)
+
+# Programar limpieza cada hora
+scheduler = BackgroundScheduler()
+scheduler.add_job(func=limpiar_reportes_temporales, trigger='interval', hours=1)
+scheduler.start()
+
+# Asegurar que el programador se apague al salir
+atexit.register(lambda: scheduler.shutdown())
