@@ -1,4 +1,4 @@
-from flask import jsonify, render_template, request, redirect, send_file, url_for, flash, send_from_directory
+from flask import abort, jsonify, render_template, request, redirect, send_file, url_for, flash, send_from_directory
 from werkzeug.utils import secure_filename
 from datetime import datetime
 import os
@@ -19,7 +19,6 @@ import seaborn as sns
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-
 
 # Configuración de rutas
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -72,7 +71,7 @@ app.config['OUTPUT_FOLDER'] = OUTPUT_FOLDER
 df_global = None
 
 # Extensiones permitidas
-ALLOWED_EXTENSIONS = {'xlsx', 'xls', 'csv'}
+ALLOWED_EXTENSIONS = {'xlsx', 'xls', 'csv','pkl', 'joblib', 'sav'}
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -246,6 +245,59 @@ def descargar_modelo():
     except Exception as e:
         flash(f'Error al descargar modelo: {str(e)}', 'danger')
         return redirect(url_for('entrenar'))
+
+def allowed_file(filename):
+    ext = filename.rsplit('.', 1)[1].lower() if '.' in filename else ''
+    print(f"Extensión del archivo: {ext}")
+    print(f"Permitir extensiones: {ALLOWED_EXTENSIONS}")
+    return ext in ALLOWED_EXTENSIONS
+
+@app.route('/cargar_modelo', methods=['POST'])
+def cargar_modelo():
+    if 'modeloArchivo' not in request.files:
+        print("No hay archivo en request.files")
+        flash('No se seleccionó ningún archivo', 'danger')
+        return redirect(url_for('modelos'))
+    
+    file = request.files['modeloArchivo']
+    print(f"Archivo recibido: {file.filename}")
+    
+    if file.filename == '':
+        print("Nombre de archivo vacío")
+        flash('No se seleccionó ningún archivo', 'danger')
+        return redirect(url_for('modelos'))
+    
+    if file and allowed_file(file.filename):
+        filename = secure_filename(file.filename)
+        save_path = os.path.join(MODEL_FOLDER, filename)
+        print(f"Guardando archivo en: {save_path}")
+        try:
+            file.save(save_path)
+            print("Archivo guardado correctamente")
+            flash(f'Modelo "{filename}" cargado correctamente', 'success')
+        except Exception as e:
+            print(f"Error guardando archivo: {e}")
+            flash(f'Error al guardar el archivo: {e}', 'danger')
+    else:
+        print("Archivo no permitido")
+        flash('Archivo no permitido. Solo formatos: .pkl, .joblib, .sav', 'danger')
+    
+    return redirect(url_for('modelos'))
+
+
+
+@app.route('/descargar_modelo_seleccionado/<modelname>')
+def descargar_modelo_seleccionado(modelname):
+    try:
+        # Asegurarse que el archivo exista
+        if not os.path.isfile(os.path.join(MODEL_FOLDER, modelname)):
+            abort(404, description="Archivo no encontrado")
+
+        # Enviar el archivo para descarga
+        return send_from_directory(MODEL_FOLDER, modelname, as_attachment=True)
+    except Exception as e:
+        # Manejo básico de errores
+        abort(500, description=f"Error al descargar el archivo: {str(e)}")
 
 @app.route('/generar_reporte/<formato>')
 def generar_reporte(formato):
@@ -638,19 +690,17 @@ def generar_pdf_con_resultados(df, conteo_tipos, promedios_por_tipo, distribucio
 def descargar(filename):
     return send_from_directory(OUTPUT_FOLDER, filename, as_attachment=True)
 
-@app.route('/eliminar_modelo/<modelname>')
+@app.route('/eliminar_modelo/<modelname>', methods=['POST'])
 def eliminar_modelo(modelname):
     try:
         model_path = os.path.join(MODEL_FOLDER, modelname)
         if os.path.exists(model_path):
             os.remove(model_path)
-            flash(f'Modelo {modelname} eliminado correctamente', 'success')
+            return jsonify({"status": "success", "message": f"Modelo {modelname} eliminado correctamente"})
         else:
-            flash('El modelo no existe', 'danger')
+            return jsonify({"status": "error", "message": "El modelo no existe"}), 404
     except Exception as e:
-        flash(f'Error al eliminar el modelo: {str(e)}', 'danger')
-    
-    return redirect(url_for('modelos'))
+        return jsonify({"status": "error", "message": f"Error al eliminar el modelo: {str(e)}"}), 500
 
 @app.route('/metricas_modelo/<nombre>')
 def metricas_modelo(nombre):
