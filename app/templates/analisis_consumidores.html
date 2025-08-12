@@ -16,49 +16,54 @@
 <form id="formFiltros">
     <div class="mb-3">
         <label>Selecciona entre 2 y 4 tipos de consumidor</label>
-        <select id="tipos_seleccionados" name="tipos_seleccionados" multiple class="form-control" required>
+        <div id="checkboxTipos" class="d-flex flex-wrap gap-3">
             {% for tipo in tipos_disponibles %}
-            <option value="{{ tipo }}">{{ tipo }}</option>
+            <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="tipos_seleccionados" value="{{ tipo }}" id="chk_{{ loop.index }}">
+                <label class="form-check-label" for="chk_{{ loop.index }}">{{ tipo }}</label>
+            </div>
             {% endfor %}
-        </select>
+        </div>
+        <div id="errorSeleccion" class="text-danger mt-1" style="display:none;">Selecciona mínimo 2 y máximo 4 tipos.</div>
     </div>
-    
+
     <!-- Aquí aparecerán las preguntas asociadas -->
     <div id="preguntas_seleccionadas" class="mb-3"></div>
-    
+
     <button type="submit" class="btn btn-success">Filtrar</button>
 </form>
 {% endif %}
 
 <hr>
 <h4>Resultados Filtrados</h4>
-<table class="table table-bordered" id="tablaResultados">
-    <thead>
-        {% if columnas %}
-        <tr>
-            {% for c in columnas %}
-            <th>{{ c }}</th>
+<div class="table-responsive" style="max-height: 500px; overflow-y: auto;">
+    <table class="table table-striped table-hover" id="tablaResultados">
+        <thead>
+            {% if columnas %}
+            <tr>
+                {% for c in columnas %}
+                <th>{{ c }}</th>
+                {% endfor %}
+            </tr>
+            {% endif %}
+        </thead>
+        <tbody>
+            {% if resultados %}
+            {% for row in resultados %}
+            <tr>
+                {% for c in columnas %}
+                <td>{{ row[c] or '' }}</td>
+                {% endfor %}
+            </tr>
             {% endfor %}
-        </tr>
-        {% endif %}
-    </thead>
-    <tbody>
-        {% if resultados %}
-        {% for row in resultados %}
-        <tr>
-            {% for c in columnas %}
-            <td>{{ row[c] or '' }}</td>
-            {% endfor %}
-        </tr>
-        {% endfor %}
-        {% endif %}
-    </tbody>
-</table>
+            {% endif %}
+        </tbody>
+    </table>
+</div>
 
 {% if excel_filename %}
   <a id="descargarExcel" class="btn btn-info" href="{{ url_for('descargar_filtrados', filename=excel_filename) }}">Descargar Excel</a>
 {% endif %}
-
 
 <hr>
 <h4>Estadísticas</h4>
@@ -68,11 +73,13 @@
 const preguntasPorTipo = {{ preguntas_por_tipo | tojson }};
 const preguntasCompletas = {{ preguntas_completas | tojson }};
 
-const selectTipos = document.getElementById('tipos_seleccionados');
+const checkboxContainer = document.getElementById('checkboxTipos');
 const contenedorPreguntas = document.getElementById('preguntas_seleccionadas');
+const errorSeleccion = document.getElementById('errorSeleccion');
 
 function actualizarPreguntas() {
-    const seleccionados = Array.from(selectTipos.selectedOptions).map(opt => opt.value);
+    const checkedBoxes = [...checkboxContainer.querySelectorAll('input[type=checkbox]:checked')];
+    const seleccionados = checkedBoxes.map(chk => chk.value);
     let preguntasAMostrar = [];
 
     seleccionados.forEach(tipo => {
@@ -81,26 +88,43 @@ function actualizarPreguntas() {
         }
     });
 
-    // Quitar duplicados
     preguntasAMostrar = [...new Set(preguntasAMostrar)];
 
     if (preguntasAMostrar.length > 0) {
-        let html = '<label>Preguntas asociadas:</label><ul class="list-group">';
-        preguntasAMostrar.forEach(p => {
-            const textoPregunta = preguntasCompletas[p] || p;
-            html += `<li class="list-group-item">${textoPregunta}</li>`;
-        });
-        html += '</ul>';
-        contenedorPreguntas.innerHTML = html;
+    let html = '<label>Preguntas asociadas:</label><ul class="list-group">';
+    preguntasAMostrar.forEach((p, index) => {
+        const textoPregunta = preguntasCompletas[p] || p;
+        html += `<li class="list-group-item"><strong>P${index + 1}:</strong> ${textoPregunta}</li>`;
+    });
+    html += '</ul>';
+    contenedorPreguntas.innerHTML = html;
+} else {
+    contenedorPreguntas.innerHTML = '';
+}
+
+}
+
+function validarSeleccion() {
+    const checkedCount = checkboxContainer.querySelectorAll('input[type=checkbox]:checked').length;
+    if (checkedCount < 2 || checkedCount > 4) {
+        errorSeleccion.style.display = 'block';
+        return false;
     } else {
-        contenedorPreguntas.innerHTML = '';
+        errorSeleccion.style.display = 'none';
+        return true;
     }
 }
 
-selectTipos.addEventListener('change', actualizarPreguntas);
+checkboxContainer.addEventListener('change', () => {
+    actualizarPreguntas();
+    validarSeleccion();
+});
 
 document.getElementById("formFiltros").addEventListener("submit", function(e) {
     e.preventDefault();
+
+    if (!validarSeleccion()) return;
+
     const formData = new FormData(this);
 
     fetch("{{ url_for('analisis_consumidores') }}", {
@@ -122,7 +146,7 @@ document.getElementById("formFiltros").addEventListener("submit", function(e) {
         tbody.innerHTML = "";
 
         if (data.columnas) {
-            let headerRow = "<tr>" + data.columnas.map(c => `<th>${c}</th>`).join("") + "</tr>";
+            let headerRow = "<tr>" + data.columnas.map(c => `<th scope='col'>${c}</th>`).join("") + "</tr>";
             thead.innerHTML = headerRow;
         }
 
@@ -147,7 +171,7 @@ document.getElementById("formFiltros").addEventListener("submit", function(e) {
     });
 });
 </script>
-<!-- Al final del bloque content, justo antes de cerrar -->
+
 <hr>
 <h4>Gráficas</h4>
 <div style="max-width: 600px; margin-bottom: 40px;">
@@ -178,7 +202,7 @@ function dibujarGraficaPromedios(promedios) {
         },
         options: {
             scales: {
-                y: { beginAtZero: true, max: 5 } // asumiendo escala 1-5
+                y: { beginAtZero: true, max: 5 }
             },
             plugins: {
                 legend: { display: true }
@@ -190,7 +214,6 @@ function dibujarGraficaPromedios(promedios) {
 function dibujarGraficaSexo(data) {
     const ctx = document.getElementById('graficaSexo').getContext('2d');
     
-    // Contar registros por sexo
     let conteo = {};
     data.forEach(row => {
         const sexo = row['Sexo'] || 'Desconocido';
@@ -221,7 +244,6 @@ function dibujarGraficaSexo(data) {
     });
 }
 
-// Llamar las funciones cuando haya datos
 const estadisticas = {{ estadisticas | tojson }};
 const resultados = {{ resultados | tojson }};
 
@@ -232,7 +254,6 @@ if (resultados) {
     dibujarGraficaSexo(resultados);
 }
 </script>
-
 
 <hr>
 <div class="d-flex justify-content-end">
