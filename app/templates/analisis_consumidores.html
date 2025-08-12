@@ -1,0 +1,242 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h2>Análisis de Tipos de Consumidores</h2>
+
+<form action="{{ url_for('analisis_consumidores') }}" method="POST" enctype="multipart/form-data" id="formCarga">
+    <div class="mb-3">
+        <label for="archivo" class="form-label">Subir dataset (CSV o Excel)</label>
+        <input class="form-control" type="file" id="archivo" name="archivo" required>
+    </div>
+    <button type="submit" class="btn btn-primary">Cargar</button>
+</form>
+
+{% if tipos_disponibles %}
+<hr>
+<form id="formFiltros">
+    <div class="mb-3">
+        <label>Selecciona entre 2 y 4 tipos de consumidor</label>
+        <select id="tipos_seleccionados" name="tipos_seleccionados" multiple class="form-control" required>
+            {% for tipo in tipos_disponibles %}
+            <option value="{{ tipo }}">{{ tipo }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    
+    <!-- Aquí aparecerán las preguntas asociadas -->
+    <div id="preguntas_seleccionadas" class="mb-3"></div>
+    
+    <button type="submit" class="btn btn-success">Filtrar</button>
+</form>
+{% endif %}
+
+<hr>
+<h4>Resultados Filtrados</h4>
+<table class="table table-bordered" id="tablaResultados">
+    <thead>
+        {% if columnas %}
+        <tr>
+            {% for c in columnas %}
+            <th>{{ c }}</th>
+            {% endfor %}
+        </tr>
+        {% endif %}
+    </thead>
+    <tbody>
+        {% if resultados %}
+        {% for row in resultados %}
+        <tr>
+            {% for c in columnas %}
+            <td>{{ row[c] or '' }}</td>
+            {% endfor %}
+        </tr>
+        {% endfor %}
+        {% endif %}
+    </tbody>
+</table>
+
+{% if excel_filename %}
+  <a id="descargarExcel" class="btn btn-info" href="{{ url_for('descargar_filtrados', filename=excel_filename) }}">Descargar Excel</a>
+{% endif %}
+
+
+<hr>
+<h4>Estadísticas</h4>
+<pre id="estadisticas">{{ estadisticas | tojson(indent=2) if estadisticas else '' }}</pre>
+
+<script>
+const preguntasPorTipo = {{ preguntas_por_tipo | tojson }};
+const preguntasCompletas = {{ preguntas_completas | tojson }};
+
+const selectTipos = document.getElementById('tipos_seleccionados');
+const contenedorPreguntas = document.getElementById('preguntas_seleccionadas');
+
+function actualizarPreguntas() {
+    const seleccionados = Array.from(selectTipos.selectedOptions).map(opt => opt.value);
+    let preguntasAMostrar = [];
+
+    seleccionados.forEach(tipo => {
+        if (preguntasPorTipo[tipo]) {
+            preguntasAMostrar = preguntasAMostrar.concat(preguntasPorTipo[tipo]);
+        }
+    });
+
+    // Quitar duplicados
+    preguntasAMostrar = [...new Set(preguntasAMostrar)];
+
+    if (preguntasAMostrar.length > 0) {
+        let html = '<label>Preguntas asociadas:</label><ul class="list-group">';
+        preguntasAMostrar.forEach(p => {
+            const textoPregunta = preguntasCompletas[p] || p;
+            html += `<li class="list-group-item">${textoPregunta}</li>`;
+        });
+        html += '</ul>';
+        contenedorPreguntas.innerHTML = html;
+    } else {
+        contenedorPreguntas.innerHTML = '';
+    }
+}
+
+selectTipos.addEventListener('change', actualizarPreguntas);
+
+document.getElementById("formFiltros").addEventListener("submit", function(e) {
+    e.preventDefault();
+    const formData = new FormData(this);
+
+    fetch("{{ url_for('analisis_consumidores') }}", {
+        method: "POST",
+        body: formData,
+        headers: {"X-Requested-With": "XMLHttpRequest"}
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.error) {
+            alert(data.error);
+            return;
+        }
+
+        // Actualizar tabla
+        const thead = document.querySelector("#tablaResultados thead");
+        const tbody = document.querySelector("#tablaResultados tbody");
+        thead.innerHTML = "";
+        tbody.innerHTML = "";
+
+        if (data.columnas) {
+            let headerRow = "<tr>" + data.columnas.map(c => `<th>${c}</th>`).join("") + "</tr>";
+            thead.innerHTML = headerRow;
+        }
+
+        data.resultados.forEach(row => {
+            let tr = "<tr>";
+            data.columnas.forEach(c => {
+                tr += `<td>${row[c] ?? ""}</td>`;
+            });
+            tr += "</tr>";
+            tbody.innerHTML += tr;
+        });
+
+        // Estadísticas
+        document.getElementById("estadisticas").textContent = JSON.stringify(data.estadisticas, null, 2);
+
+        // Botón descargar Excel
+        if (data.excel_filename) {
+            const btn = document.getElementById("descargarExcel");
+            btn.href = `/descargar/${data.excel_filename}`;
+            btn.style.display = "inline-block";
+        }
+    });
+});
+</script>
+<!-- Al final del bloque content, justo antes de cerrar -->
+<hr>
+<h4>Gráficas</h4>
+<div style="max-width: 600px; margin-bottom: 40px;">
+    <canvas id="graficaPromedios"></canvas>
+</div>
+<div style="max-width: 400px;">
+    <canvas id="graficaSexo"></canvas>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+function dibujarGraficaPromedios(promedios) {
+    const ctx = document.getElementById('graficaPromedios').getContext('2d');
+    const etiquetas = Object.keys(promedios);
+    const valores = Object.values(promedios);
+
+    new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: etiquetas,
+            datasets: [{
+                label: 'Promedio por pregunta',
+                data: valores,
+                backgroundColor: 'rgba(54, 162, 235, 0.7)',
+                borderColor: 'rgba(54, 162, 235, 1)',
+                borderWidth: 1
+            }]
+        },
+        options: {
+            scales: {
+                y: { beginAtZero: true, max: 5 } // asumiendo escala 1-5
+            },
+            plugins: {
+                legend: { display: true }
+            }
+        }
+    });
+}
+
+function dibujarGraficaSexo(data) {
+    const ctx = document.getElementById('graficaSexo').getContext('2d');
+    
+    // Contar registros por sexo
+    let conteo = {};
+    data.forEach(row => {
+        const sexo = row['Sexo'] || 'Desconocido';
+        conteo[sexo] = (conteo[sexo] || 0) + 1;
+    });
+
+    new Chart(ctx, {
+        type: 'pie',
+        data: {
+            labels: Object.keys(conteo),
+            datasets: [{
+                label: 'Distribución por Sexo',
+                data: Object.values(conteo),
+                backgroundColor: [
+                    'rgba(255, 99, 132, 0.7)',
+                    'rgba(54, 162, 235, 0.7)',
+                    'rgba(255, 206, 86, 0.7)'
+                ],
+                borderColor: '#fff',
+                borderWidth: 1
+            }]
+        },
+        options: {
+            plugins: {
+                legend: { position: 'bottom' }
+            }
+        }
+    });
+}
+
+// Llamar las funciones cuando haya datos
+const estadisticas = {{ estadisticas | tojson }};
+const resultados = {{ resultados | tojson }};
+
+if (estadisticas && estadisticas.promedios) {
+    dibujarGraficaPromedios(estadisticas.promedios);
+}
+if (resultados) {
+    dibujarGraficaSexo(resultados);
+}
+</script>
+
+
+<hr>
+<div class="d-flex justify-content-end">
+    <a href="{{ url_for('predecir') }}" class="btn btn-warning">Ir a Predecir</a>
+</div>
+
+{% endblock %}
