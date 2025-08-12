@@ -21,137 +21,322 @@
         <button type="submit" class="btn btn-primary">Predecir</button>
     </form>
 
+    {% if tipos_disponibles %}
+    <hr>
+    <h4>Filtrar Resultados</h4>
+    <form method="POST" id="filtrosForm">
+        <input type="hidden" name="modelo" value="{{ request.form.modelo }}">
+        <div class="mb-3">
+            <label class="form-label">Selecciona tipos de consumidor (2-4):</label>
+            <div class="row" id="tiposCheckboxes">
+                {% for tipo in tipos_disponibles %}
+                <div class="col-md-3">
+                    <div class="form-check">
+                        <input class="form-check-input tipo-checkbox" type="checkbox" name="tipos_seleccionados" 
+                               id="tipo_{{ loop.index }}" value="{{ tipo }}"
+                               {% if tipo in request.form.getlist('tipos_seleccionados') %}checked{% endif %}>
+                        <label class="form-check-label" for="tipo_{{ loop.index }}">{{ tipo }}</label>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label">Preguntas asociadas seleccionadas (solo lectura):</label>
+            <ul class="list-group" id="preguntasAsociadas">
+                <!-- Aquí se llenarán con JS -->
+            </ul>
+        </div>
+
+        <button type="button" id="filtrarBtn" class="btn btn-secondary">Filtrar</button>
+    </form>
+    {% endif %}
+
     {% if resultados %}
     <hr>
-    <!-- Sistema de pestañas -->
-    <ul class="nav nav-tabs" id="resultTabs" role="tablist">
-        <li class="nav-item" role="presentation">
-            <button class="nav-link active" id="tabla-tab" data-bs-toggle="tab" data-bs-target="#tabla" type="button" role="tab">Tabla de Resultados</button>
-        </li>
-        <li class="nav-item" role="presentation">
-            <button class="nav-link" id="graf1-tab" data-bs-toggle="tab" data-bs-target="#graf1" type="button" role="tab">Gráfica Conteo</button>
-        </li>
-        <li class="nav-item" role="presentation">
-            <button class="nav-link" id="graf2-tab" data-bs-toggle="tab" data-bs-target="#graf2" type="button" role="tab">Gráfica Promedios</button>
-        </li>
-    </ul>
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h4>Resultados</h4>
+        {% if excel_filename %}
+        <a href="{{ url_for('descargar', filename=excel_filename) }}" class="btn btn-success" id="downloadExcelBtn">
+            Descargar Excel Filtrado
+        </a>
+        {% else %}
+        <a href="#" class="btn btn-success" id="downloadExcelBtn" style="display:none;">
+            Descargar Excel Filtrado
+        </a>
+        {% endif %}
+    </div>
 
-    <div class="tab-content mt-3">
-        <!-- TABLA -->
-        <div class="tab-pane fade show active" id="tabla" role="tabpanel">
-            <h4>Resultados completos:</h4>
-            <div class="table-responsive" style="max-height: 500px; overflow-y: auto;">
-                <table class="table table-striped table-hover">
-                    <thead>
-                        <tr>
-                            {% for col in resultados[0].keys() %}
-                            <th>{{ col }}</th>
-                            {% endfor %}
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for row in resultados %}
-                        <tr>
-                            {% for col in row.values() %}
-                            <td>{{ col }}</td>
-                            {% endfor %}
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
+    <div class="table-responsive" style="max-height: 500px; overflow-y: auto;">
+        <table class="table table-striped table-hover">
+            <thead>
+                <tr>
+                    {% for col in resultados[0].keys() %}
+                    <th>{{ col }}</th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in resultados %}
+                <tr>
+                    {% for col in row.values() %}
+                    <td>{{ col }}</td>
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    {% if estadisticas %}
+    <hr>
+    <h4>Estadísticas del Filtro</h4>
+    <div class="row" id="estadisticas">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    Resumen
+                </div>
+                <div class="card-body">
+                    <p><strong>Total de registros:</strong> {{ estadisticas.conteo }}</p>
+                </div>
             </div>
-           {% if pdf_file %}
-<a href="{{ url_for('descargar', filename=pdf_file) }}" class="btn btn-success mt-2">
-    Descargar Reporte Completo (PDF)
-</a>
-{% endif %}
-
-
         </div>
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    Promedios por Pregunta
+                </div>
+                <div class="card-body">
+                    <ul class="list-group">
+                        {% for p, val in estadisticas.promedios.items() %}
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            {{ p }}
+                            <span class="badge bg-primary rounded-pill">{{ val }}</span>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
 
-
-        <!-- GRAFICA 1 -->
-        <div class="tab-pane fade" id="graf1" role="tabpanel">
+    {% if chart_data %}
+    <hr>
+    <h4>Visualizaciones</h4>
+    <div class="row" id="graficas">
+        <div class="col-md-6">
+            <h5>Distribución de Tipos de Consumidor</h5>
+            <p class="text-muted">
+                <small>Muestra el porcentaje de cada tipo de consumidor identificado en los datos filtrados.</small>
+            </p>
             <canvas id="chartConteo"></canvas>
-            <canvas id="chartConteo" width="20" height="20"></canvas>
-
         </div>
-
-        <!-- GRAFICA 2 -->
-        <div class="tab-pane fade" id="graf2" role="tabpanel">
+        <div class="col-md-6">
+            <h5>Promedios por Pregunta</h5>
+            <p class="text-muted">
+                <small>Compara el promedio de respuestas (P1-P20) para cada tipo de consumidor. Valores más altos indican mayor frecuencia de comportamiento.</small>
+            </p>
             <canvas id="chartPromedios"></canvas>
         </div>
-        
     </div>
+    {% endif %}
     {% endif %}
 </div>
 
 {% if chart_data %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-    const dataCharts = {{ chart_data|safe }};
+document.addEventListener('DOMContentLoaded', function() {
+    const filtrarBtn = document.getElementById('filtrarBtn');
+    if (!filtrarBtn) return;
 
-    // GRAFICA 1: Pie chart conteo tipos (igual que en PDF)
-    new Chart(document.getElementById('chartConteo'), {
-        type: 'pie',
-        data: {
-            labels: Object.keys(dataCharts.conteo_tipos),
-            datasets: [{
-                label: 'Cantidad',
-                data: Object.values(dataCharts.conteo_tipos),
-                backgroundColor: [
-                    'rgba(255, 99, 132, 0.6)',
-                    'rgba(54, 162, 235, 0.6)',
-                    'rgba(255, 206, 86, 0.6)',
-                    'rgba(75, 192, 192, 0.6)',
-                    'rgba(153, 102, 255, 0.6)',
-                    'rgba(255, 159, 64, 0.6)'
-                ]
-            }]
-        },
-        options: {
-            responsive: true,
-            plugins: {
-                legend: { position: 'right' }
+    const filtrosForm = document.getElementById('filtrosForm');
+    const tablaResultados = document.querySelector('.table-responsive tbody');
+    const theadResultados = document.querySelector('.table-responsive thead tr');
+    const divEstadisticas = document.getElementById('estadisticas');
+
+    let chartConteo = null;
+    let chartPromedios = null;
+
+    function renderCharts(data) {
+        if (chartConteo) chartConteo.destroy();
+        if (chartPromedios) chartPromedios.destroy();
+
+        chartConteo = new Chart(document.getElementById('chartConteo'), {
+            type: 'pie',
+            data: {
+                labels: Object.keys(data.conteo_tipos),
+                datasets: [{
+                    data: Object.values(data.conteo_tipos),
+                    backgroundColor: ['rgba(255,99,132,0.6)', 'rgba(54,162,235,0.6)', 'rgba(255,206,86,0.6)']
+                }]
             }
+        });
+
+        const preguntas = Object.keys(data.promedios_por_tipo[Object.keys(data.promedios_por_tipo)[0]]);
+        const datasets = Object.entries(data.promedios_por_tipo).map(([tipo, valores], i) => ({
+            label: tipo,
+            data: Object.values(valores),
+            borderColor: `rgba(${75 + i*50}, 192, 192, 0.8)`,
+            fill: false
+        }));
+
+        chartPromedios = new Chart(document.getElementById('chartPromedios'), {
+            type: 'line',
+            data: { labels: preguntas, datasets },
+            options: { responsive: true }
+        });
+    }
+
+    filtrarBtn.addEventListener('click', async function() {
+        filtrarBtn.disabled = true;
+        filtrarBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Procesando...';
+
+        try {
+            const formData = new FormData(filtrosForm);
+            const response = await fetch('{{ url_for("predecir") }}', {
+                method: 'POST',
+                body: formData,
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                alert(errorData.error || 'Error en la respuesta');
+                throw new Error('Error en la respuesta');
+            }
+
+            const data = await response.json();
+
+            // Actualizar encabezados y filas
+            if (data.resultados && data.columnas) {
+                theadResultados.innerHTML = data.columnas.map(col => `<th>${col}</th>`).join('');
+                tablaResultados.innerHTML = data.resultados.map(row => `
+                    <tr>${data.columnas.map(col => `<td>${row[col] ?? ''}</td>`).join('')}</tr>
+                `).join('');
+            }
+
+            // Actualizar estadísticas
+            if (data.estadisticas && divEstadisticas) {
+                divEstadisticas.innerHTML = `
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-header">Resumen</div>
+                            <div class="card-body">
+                                <p><strong>Total registros:</strong> ${data.estadisticas.conteo}</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-header">Promedios</div>
+                            <div class="card-body">
+                                <ul class="list-group">
+                                    ${Object.entries(data.estadisticas.promedios).map(([p, val]) => `
+                                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                                            ${p} <span class="badge bg-primary rounded-pill">${val?.toFixed(2) ?? 'N/A'}</span>
+                                        </li>
+                                    `).join('')}
+                                </ul>
+                            </div>
+                        </div>
+                    </div>`;
+            }
+
+            // Actualizar gráficos
+            if (data.chart_data) {
+                renderCharts(JSON.parse(data.chart_data));
+            }
+
+            // Actualizar enlace y mostrar botón de descarga Excel
+            if (data.excel_filename) {
+                const downloadBtn = document.getElementById('downloadExcelBtn');
+                if (downloadBtn) {
+                    downloadBtn.href = `{{ url_for('descargar', filename='') }}/${data.excel_filename}`;
+                    downloadBtn.style.display = 'inline-block';
+                }
+            }
+
+        } catch (error) {
+            console.error('Error:', error);
+        } finally {
+            filtrarBtn.disabled = false;
+            filtrarBtn.textContent = 'Filtrar';
         }
     });
-
-    // GRAFICA 2: Line plot promedios por tipo (igual que en PDF)
-    const preguntas = Object.keys(Object.values(dataCharts.promedios_por_tipo)[0]);
-    const datasetsLine = Object.entries(dataCharts.promedios_por_tipo).map(([tipo, valores], i) => ({
-        label: tipo,
-        data: Object.values(valores),
-        borderColor: [
-            'rgba(255, 99, 132, 0.8)',
-            'rgba(54, 162, 235, 0.8)',
-            'rgba(255, 206, 86, 0.8)',
-            'rgba(75, 192, 192, 0.8)',
-            'rgba(153, 102, 255, 0.8)',
-            'rgba(255, 159, 64, 0.8)'
-        ][i % 6],
-        fill: false,
-        tension: 0.2
-    }));
-
-    new Chart(document.getElementById('chartPromedios'), {
-        type: 'line',
-        data: {
-            labels: preguntas,
-            datasets: datasetsLine
-        },
-        options: {
-            responsive: true,
-            plugins: {
-                legend: { position: 'top' }
-            },
-            scales: {
-                y: { beginAtZero: true }
-            }
-        }
-    });
-
+});
 </script>
 
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const preguntasPorTipo = {
+        "Ahorro": [
+            "1. Prefiero esperar a que un producto esté en oferta antes de comprarlo.",
+            "2. Me esfuerzo por gastar menos de lo que gano cada mes.",
+            "3. Antes de comprar, comparo precios en varias tiendas o sitios web.",
+            "4. Considero que ahorrar para emergencias es más importante que gastar en lujos.",
+            "5. Evito compras que impliquen endeudarme."
+        ],
+        "Planificador": [
+            "6. Me gusta planificar mis compras con antelación y hacer listas detalladas.",
+            "7. Antes de tomar una decisión de compra, investigo a fondo las opciones.",
+            "8. Prefiero retrasar una compra hasta estar completamente seguro de mi elección.",
+            "9. Me gusta establecer metas financieras claras y cumplirlas.",
+            "10. Evalúo los beneficios y desventajas antes de comprar cualquier producto importante."
+        ],
+        "Impulsivo": [
+            "11. Disfruto comprar cosas nuevas aunque no las necesite realmente.",
+            "12. A veces hago compras sin pensarlo mucho, solo porque algo me llamó la atención.",
+            "13. Me atraen los productos novedosos o ediciones limitadas.",
+            "14. Me emociona la idea de probar marcas o artículos que nunca he usado antes.",
+            "15. Es probable que compre algo solo por el placer de tenerlo en ese momento."
+        ],
+        "Leal": [
+            "16. Prefiero comprar siempre las mismas marcas en las que confío.",
+            "17. Estoy dispuesto a pagar más por una marca que considero prestigiosa.",
+            "18. Me gusta que mis compras reflejen mi estilo y estatus social.",
+            "19. Recomiendo mis marcas favoritas a familiares y amigos.",
+            "20. Me siento más seguro comprando productos de marcas reconocidas, aunque sean más caros."
+        ]
+    };
+
+    function actualizarPreguntas() {
+        const preguntasContainer = document.getElementById('preguntasAsociadas');
+        preguntasContainer.innerHTML = '';
+
+        const tiposSeleccionados = Array.from(document.querySelectorAll('.tipo-checkbox:checked'))
+            .map(cb => cb.value);
+
+        if (tiposSeleccionados.length === 0) {
+            preguntasContainer.innerHTML = '<li class="list-group-item text-muted">No hay preguntas para mostrar.</li>';
+            return;
+        }
+
+        const preguntasMostradas = new Set();
+
+        tiposSeleccionados.forEach(tipo => {
+            if (preguntasPorTipo[tipo]) {
+                preguntasPorTipo[tipo].forEach(p => preguntasMostradas.add(p));
+            }
+        });
+
+        preguntasMostradas.forEach(pregunta => {
+            const li = document.createElement('li');
+            li.classList.add('list-group-item');
+            li.textContent = pregunta;
+            preguntasContainer.appendChild(li);
+        });
+    }
+
+    document.querySelectorAll('.tipo-checkbox').forEach(cb => {
+        cb.addEventListener('change', actualizarPreguntas);
+    });
+
+    actualizarPreguntas();
+});
+</script>
 {% endif %}
 {% endblock %}

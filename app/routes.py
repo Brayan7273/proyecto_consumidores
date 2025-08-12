@@ -32,10 +32,44 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(MODEL_FOLDER, exist_ok=True)
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
+# Diccionario con preguntas por tipo (ajústalo a tus preguntas)
+preguntas_por_tipo = {
+    "Ahorro": [
+        "1. Prefiero esperar a que un producto esté en oferta antes de comprarlo.",
+        "2. Me esfuerzo por gastar menos de lo que gano cada mes.",
+        "3. Antes de comprar, comparo precios en varias tiendas o sitios web.",
+        "4. Considero que ahorrar para emergencias es más importante que gastar en lujos.",
+        "5. Evito compras que impliquen endeudarme."
+    ],
+    "Planificador": [
+        "6. Me gusta planificar mis compras con antelación y hacer listas detalladas.",
+        "7. Antes de tomar una decisión de compra, investigo a fondo las opciones.",
+        "8. Prefiero retrasar una compra hasta estar completamente seguro de mi elección.",
+        "9. Me gusta establecer metas financieras claras y cumplirlas.",
+        "10. Evalúo los beneficios y desventajas antes de comprar cualquier producto importante."
+    ],
+    "Impulsivo": [
+        "11. Disfruto comprar cosas nuevas aunque no las necesite realmente.",
+        "12. A veces hago compras sin pensarlo mucho, solo porque algo me llamó la atención.",
+        "13. Me atraen los productos novedosos o ediciones limitadas.",
+        "14. Me emociona la idea de probar marcas o artículos que nunca he usado antes.",
+        "15. Es probable que compre algo solo por el placer de tenerlo en ese momento."
+    ],
+    "Leal": [
+        "16. Prefiero comprar siempre las mismas marcas en las que confío.",
+        "17. Estoy dispuesto a pagar más por una marca que considero prestigiosa.",
+        "18. Me gusta que mis compras reflejen mi estilo y estatus social.",
+        "19. Recomiendo mis marcas favoritas a familiares y amigos.",
+        "20. Me siento más seguro comprando productos de marcas reconocidas, aunque sean más caros."
+    ]
+}
+
 # Asignar a Flask
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MODEL_FOLDER'] = MODEL_FOLDER
 app.config['OUTPUT_FOLDER'] = OUTPUT_FOLDER
+
+df_global = None
 
 # Extensiones permitidas
 ALLOWED_EXTENSIONS = {'xlsx', 'xls', 'csv'}
@@ -386,41 +420,90 @@ import json
 
 @app.route('/predecir', methods=['GET', 'POST'])
 def predecir():
+    global df_global
     modelos_disponibles = get_model_files()
     resultados = None
     chart_data = None
+    tipos_disponibles = []
+    estadisticas = None
+    excel_filename = None
 
     if request.method == 'POST':
-        if 'modelo' not in request.form or not request.form['modelo']:
-            flash('Debe seleccionar un modelo', 'danger')
-            return redirect(request.url)
-        
-        if 'archivo' not in request.files:
-            flash('No se seleccionó ningún archivo', 'danger')
-            return redirect(request.url)
-        
-        file = request.files['archivo']
-        if file.filename == '':
-            flash('No se seleccionó ningún archivo', 'danger')
-            return redirect(request.url)
-        
-        if file and allowed_file(file.filename):
-            try:
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            tipos_seleccionados = request.form.getlist('tipos_seleccionados')
+
+            if df_global is None:
+                return jsonify({'error': 'No hay datos cargados'}), 400
+
+            if not tipos_seleccionados:
+                df_filtrado = df_global.copy()
+                preguntas_a_mostrar = [col for col in df_global.columns if col.startswith('P')]
+            else:
+                df_filtrado = df_global[df_global['Prediccion'].isin(tipos_seleccionados)]
+                preguntas_a_mostrar = []
+                for tipo in tipos_seleccionados:
+                    if tipo in preguntas_por_tipo:
+                        preguntas_a_mostrar.extend(preguntas_por_tipo[tipo])
+                preguntas_a_mostrar = list(set(preguntas_a_mostrar))
+
+            columnas_fijas = ['Nombre', 'Sexo', 'Prediccion']
+            columnas = [col for col in (columnas_fijas + preguntas_a_mostrar) if col in df_filtrado.columns]
+            df_filtrado = df_filtrado[columnas]
+
+            resultados = [
+                {col: row.get(col, None) for col in columnas}
+                for row in df_filtrado.head(30).to_dict('records')
+            ]
+
+            estadisticas = {
+                'conteo': len(df_filtrado),
+                'promedios': df_filtrado[preguntas_a_mostrar].mean().round(2).replace({pd.NA: None}).to_dict() if preguntas_a_mostrar else {}
+            }
+
+            conteo_tipos = df_filtrado['Prediccion'].value_counts().to_dict()
+            promedios_por_tipo = df_filtrado.groupby('Prediccion')[preguntas_a_mostrar].mean().round(2).to_dict() if preguntas_a_mostrar else {}
+
+            chart_data = json.dumps({
+                'conteo_tipos': conteo_tipos,
+                'promedios_por_tipo': promedios_por_tipo
+            })
+
+            if len(df_filtrado) > 0:
+                excel_filename = 'filtrado.xlsx'
+                path_excel = os.path.join(app.config['OUTPUT_FOLDER'], excel_filename)
+                df_filtrado.to_excel(path_excel, index=False)
+
+            return jsonify({
+                'resultados': resultados,
+                'estadisticas': estadisticas,
+                'chart_data': chart_data,
+                'columnas': columnas,
+                'excel_filename': excel_filename
+            })
+
+        else:
+            if 'modelo' not in request.form or not request.form['modelo']:
+                flash('Debe seleccionar un modelo', 'danger')
+                return redirect(request.url)
+
+            if 'archivo' not in request.files or request.files['archivo'].filename == '':
+                flash('No se seleccionó ningún archivo', 'danger')
+                return redirect(request.url)
+
+            file = request.files['archivo']
+            if file and allowed_file(file.filename):
                 filename = secure_filename(file.filename)
                 filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
                 file.save(filepath)
 
-                if filename.endswith('.csv'):
-                    df = pd.read_csv(filepath)
-                else:
-                    df = pd.read_excel(filepath)
+                df = pd.read_csv(filepath) if filename.endswith('.csv') else pd.read_excel(filepath)
 
                 model_path = request.form['modelo']
                 model_data = joblib.load(model_path)
                 modelo = model_data['model']
                 encoder = model_data['encoder']
-
                 required_columns = model_data['features']
+
                 if not all(col in df.columns for col in required_columns):
                     flash('El archivo no tiene la estructura requerida por el modelo', 'danger')
                     return redirect(request.url)
@@ -429,33 +512,54 @@ def predecir():
                 predicciones = modelo.predict(X)
                 df['Prediccion'] = encoder.inverse_transform(predicciones)
 
-                # Datos para gráficas
-                conteo_tipos = df['Prediccion'].value_counts().to_dict()
-                preguntas_ejemplo = [col for col in required_columns if col.startswith('P')][:5]
-                promedios_por_tipo = df.groupby('Prediccion')[preguntas_ejemplo].mean().round(2).to_dict()
-                df['PuntajeTotal'] = df[preguntas_ejemplo].sum(axis=1)
-                distribucion_puntaje = df.groupby('Prediccion')['PuntajeTotal'].describe().to_dict()
+                df_global = df.copy()
+                tipos_disponibles = sorted(df['Prediccion'].unique().tolist())
 
-                # Generar PDF con resultados completos
-                pdf_filename = 'resultados_completos.pdf'
-                pdf_path = os.path.join(app.config['OUTPUT_FOLDER'], pdf_filename)
-                generar_pdf_con_resultados(df, conteo_tipos, promedios_por_tipo, distribucion_puntaje, pdf_path)
+                preguntas_a_mostrar = [col for col in required_columns if col.startswith('P')]
+                columnas_fijas = ['Nombre', 'Sexo', 'Prediccion']
+                columnas = [col for col in (columnas_fijas + preguntas_a_mostrar) if col in df.columns]
+
+                resultados = [
+                    {col: row.get(col, None) for col in columnas}
+                    for row in df[columnas].head(30).to_dict('records')
+                ]
+
+                conteo_tipos = df['Prediccion'].value_counts().to_dict()
+                promedios_por_tipo = df.groupby('Prediccion')[preguntas_a_mostrar].mean().round(2).to_dict()
 
                 chart_data = json.dumps({
                     'conteo_tipos': conteo_tipos,
-                    'promedios_por_tipo': promedios_por_tipo,
-                    'distribucion_puntaje': distribucion_puntaje
+                    'promedios_por_tipo': promedios_por_tipo
                 })
 
-                resultados = df.to_dict(orient='records')
+                excel_filename = 'general.xlsx'
+                path_excel = os.path.join(app.config['OUTPUT_FOLDER'], excel_filename)
+                df[columnas].to_excel(path_excel, index=False)
 
-                flash('Predicciones y reporte PDF generados exitosamente', 'success')
+                flash('Predicciones generadas exitosamente', 'success')
 
-            except Exception as e:
-                flash(f'Error al procesar el archivo: {str(e)}', 'danger')
+            else:
+                flash('Archivo no permitido', 'danger')
                 return redirect(request.url)
 
-    return render_template('predecir.html', modelos=modelos_disponibles, resultados=resultados, chart_data=chart_data, pdf_file='resultados_completos.pdf')
+    return render_template('predecir.html',
+                           modelos=modelos_disponibles,
+                           resultados=resultados,
+                           chart_data=chart_data,
+                           tipos_disponibles=tipos_disponibles,
+                           estadisticas=estadisticas,
+                           excel_filename=excel_filename)
+
+
+
+
+
+@app.route('/descargar/<filename>')
+def descargar_filtrados(filename):
+    return send_from_directory(app.config['OUTPUT_FOLDER'], filename, as_attachment=True)
+
+if __name__ == '__main__':
+    app.run(debug=True)
 
 
 import io
