@@ -19,6 +19,8 @@ import seaborn as sns
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+from flask import session
+
 
 # Configuración de rutas
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -716,11 +718,7 @@ def metricas_modelo(nombre):
         'metricas': model_data.get('report', {})
     })
 
-@app.route('/seleccionar_modelo/<nombre>', methods=['POST'])
+@app.route('/seleccionar_modelo/<nombre>', methods=['GET'])
 def seleccionar_modelo(nombre):
-    session['modelo_seleccionado'] = nombre  # Usa Flask-Session
-    return jsonify({
-        'status': 'success',
-        'modelo': nombre,
-        'message': 'Modelo seleccionado para predicciones'
-    })
+    session['modelo_seleccionado'] = nombre
+    return redirect(url_for('/predecir'))  
